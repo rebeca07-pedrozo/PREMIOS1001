@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --rojo: #E30518;
+    --rojo-hover: #B80413;
+    --rojo-tinte: #FEF2F3;
+    --ambar: #FFB800;
+    --fondo: #FFFFFF;
+    --fondo-2: #F5F5F7;
+    --hundido: #FAFAFA;
+    --texto: #2D2A26;
+    --texto-2: #6E6A66;
+    --borde: #E4E1DD;
+    --borde-fuerte: #CBC6C1;
+
+    --error: #9B1C24;
+    --error-2: #7A4549;
+    --error-fondo: #FDF1F1;
+    --error-borde: #F1C6C9;
+    --exito: #17663D;
+    --exito-2: #3F5F4B;
+    --exito-fondo: #EEF7F1;
+    --exito-borde: #BCDCC8;
+    --aviso: #694800;
+    --aviso-2: #66572F;
+    --aviso-fondo: #FFF8E3;
+    --aviso-borde: #F2CF6B;
+
+    --radio: 10px;
+    --radio-sm: 6px;
+    --sombra: 0 1px 2px rgba(45, 42, 38, .05), 0 6px 20px -8px rgba(45, 42, 38, .12);
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --fuente: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--fuente);
+    font-size: .9375rem;
+    line-height: 1.5;
+    color: var(--texto);
+    background: var(--fondo-2);
+    -webkit-font-smoothing: antialiased;
+    caret-color: var(--rojo);
+  }
+  ::selection { background: #F9D2D6; color: var(--texto); }
+  :focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  h1, h2, h3 { text-wrap: balance; }
+  button, input, select { font: inherit; color: inherit; }
+
+  .solo-lector {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .saltar {
+    position: absolute; left: 16px; top: -48px; z-index: 10;
+    background: var(--texto); color: #fff; padding: 8px 14px; border-radius: var(--radio-sm);
+    text-decoration: none; font-weight: 600;
+  }
+  .saltar:focus { top: 12px; }
+
+  .icono {
+    width: 20px; height: 20px; flex: none;
+    fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* Barra superior ---------------------------------------------------- */
+  .barra { background: var(--fondo); border-bottom: 1px solid var(--borde); }
+  .barra__interior {
+    max-width: 1160px; margin: 0 auto; padding: 12px 24px; min-height: 64px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .marca { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .marca__logo { display: block; height: 32px; width: auto; max-width: 160px; }
+  .marca__texto { font-weight: 800; font-size: 1.125rem; letter-spacing: -.01em; color: var(--rojo); }
+  .marca__separador { width: 1px; height: 28px; background: var(--borde-fuerte); flex: none; }
+  .marca__modulo { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+  .marca__modulo strong { font-size: .9375rem; letter-spacing: .06em; }
+  .marca__modulo span { font-size: .8125rem; color: var(--texto-2); }
+  .sesion {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    font-size: .8125rem; color: var(--texto-2);
+  }
+  .sesion .icono { width: 18px; height: 18px; }
+  .sesion span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Disposición ------------------------------------------------------- */
+  .contenedor { max-width: 1160px; margin: 0 auto; padding: 36px 24px 72px; }
+  .intro h1 {
+    margin: 0 0 8px; font-size: 1.75rem; line-height: 1.2; font-weight: 650; letter-spacing: -.015em;
+  }
+  .intro p { margin: 0; max-width: 64ch; color: var(--texto-2); }
+  .disposicion {
+    display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    gap: 32px; margin-top: 28px; align-items: start;
+  }
+
+  .panel {
+    background: var(--fondo); border: 1px solid var(--borde);
+    border-radius: var(--radio); box-shadow: var(--sombra); padding: 24px;
+  }
+  .panel__titulo { margin: 0 0 18px; font-size: 1.0625rem; font-weight: 650; }
+
+  /* Campos ------------------------------------------------------------ */
+  .campo { margin-bottom: 20px; }
+  .campo label { display: block; margin-bottom: 6px; font-size: .875rem; font-weight: 600; }
+  .campo input {
+    width: 100%; height: 42px; padding: 0 12px;
+    border: 1px solid var(--borde-fuerte); border-radius: var(--radio-sm); background: var(--fondo);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .campo input::placeholder { color: var(--texto-2); opacity: 1; }
+  .campo input:focus { outline: none; border-color: var(--texto); box-shadow: 0 0 0 3px rgba(45, 42, 38, .12); }
+  .campo input[aria-invalid="true"] { border-color: var(--error); }
+  .campo input:disabled { background: var(--fondo-2); color: var(--texto-2); }
+  .ayuda { margin: 6px 0 0; font-size: .8125rem; color: var(--texto-2); }
+  .error-campo {
+    display: flex; gap: 6px; align-items: flex-start;
+    margin: 8px 0 0; font-size: .8125rem; font-weight: 500; color: var(--error);
+  }
+  .error-campo .icono { width: 16px; height: 16px; margin-top: 2px; }
+
+  /* Zona de carga ----------------------------------------------------- */
+  .zona {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 212px; padding: 28px 20px; text-align: center; cursor: pointer;
+    border: 1.5px dashed var(--borde-fuerte); border-radius: var(--radio); background: var(--hundido);
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .zona:focus-within { outline: 2px solid var(--texto); outline-offset: 2px; }
+  .zona__icono {
+    display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 10px;
+    border-radius: 50%; border: 1px solid var(--borde); background: var(--fondo); color: var(--rojo);
+    transition: transform 220ms var(--ease-out);
+  }
+  .zona__icono .icono { width: 22px; height: 22px; }
+  .zona__titulo { font-size: 1rem; font-weight: 600; }
+  .zona__texto { color: var(--texto-2); }
+  .zona__enlace {
+    color: var(--rojo); font-weight: 600;
+    text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+  }
+  .zona__nota { margin-top: 12px; font-size: .8125rem; color: var(--texto-2); }
+  .zona.arrastrando { border-style: solid; border-color: var(--rojo); background: var(--rojo-tinte); }
+  .zona.arrastrando .zona__icono { transform: translateY(-3px); }
+
+  /* Archivo seleccionado ---------------------------------------------- */
+  .archivo {
+    display: flex; align-items: center; gap: 14px; padding: 14px 14px 14px 16px;
+    border: 1px solid var(--borde); border-radius: var(--radio); background: var(--hundido);
+  }
+  .archivo__icono {
+    display: grid; place-items: center; flex: none; width: 44px; height: 44px;
+    border-radius: 8px; background: #E8F2EC; color: #1E6B44;
+  }
+  .archivo__info { flex: 1; min-width: 0; }
+  .archivo__nombre { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .archivo__meta { font-size: .8125rem; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+  .archivo__acciones { display: flex; gap: 4px; flex: none; }
+
+  /* Botones ----------------------------------------------------------- */
+  .boton {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 42px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px;
+    font-size: .9375rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
+  }
+  .boton:active:not(:disabled) { transform: scale(.97); }
+  .boton:disabled { cursor: not-allowed; }
+  .boton .icono { width: 18px; height: 18px; }
+  .boton--primario { background: var(--rojo); color: #fff; }
+  .boton--primario:active:not(:disabled) { background: var(--rojo-hover); }
+  .boton--primario:disabled { background: #E9E6E3; color: #76716C; }
+  .boton--secundario { background: var(--fondo); border-color: var(--borde-fuerte); color: var(--texto); }
+  .boton--secundario:disabled { color: #9A958F; }
+  .boton--sutil { height: 36px; padding: 0 10px; background: transparent; color: var(--texto); }
+  .boton--icono { width: 36px; padding: 0; }
+  @media (hover: hover) and (pointer: fine) {
+    .boton--primario:hover:not(:disabled) { background: var(--rojo-hover); }
+    .boton--secundario:hover:not(:disabled) { background: var(--fondo-2); border-color: var(--texto-2); }
+    .boton--sutil:hover:not(:disabled) { background: #EEEDEB; }
+    .zona:hover { border-color: var(--texto-2); background: #F6F5F4; }
+    .zona.arrastrando:hover { border-color: var(--rojo); background: var(--rojo-tinte); }
+  }
+  .girador {
+    width: 16px; height: 16px; border-radius: 50%; flex: none;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: girar 700ms linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  .acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+  /* Progreso ---------------------------------------------------------- */
+  .progreso { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--borde); }
+  .progreso__cabecera { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
+  .progreso__tiempo { flex: none; font-weight: 400; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+  .progreso__detalle { margin: 2px 0 0; font-size: .875rem; color: var(--exito); }
+  .progreso__barra {
+    position: relative; height: 4px; margin: 14px 0; overflow: hidden;
+    border-radius: 2px; background: #ECEAE7;
+  }
+  .progreso__barra span {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 34%; border-radius: 2px; background: var(--rojo);
+    animation: avanzar 1.25s cubic-bezier(.65, 0, .35, 1) infinite;
+  }
+  @keyframes avanzar { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  .etapas { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; font-size: .8125rem; color: var(--texto-2); }
+  .etapas li { display: flex; align-items: center; gap: 8px; }
+  .etapas li::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    border: 1.5px solid var(--borde-fuerte); background: var(--fondo);
+  }
+  .etapas li[data-estado="activa"] { color: var(--texto); font-weight: 600; }
+  .etapas li[data-estado="activa"]::before { border-color: var(--rojo); background: var(--rojo); }
+  .etapas li[data-estado="hecha"]::before { border-color: var(--exito); background: var(--exito); }
+
+  /* Guía lateral ------------------------------------------------------ */
+  .guia { padding-top: 4px; }
+  .guia__bloque { padding-bottom: 22px; margin-bottom: 22px; border-bottom: 1px solid var(--borde); }
+  .guia h2 { margin: 0 0 12px; font-size: .9375rem; font-weight: 650; }
+  .guia p { margin: 0 0 14px; font-size: .875rem; color: var(--texto-2); }
+  .pasos { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: paso; }
+  .pasos li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; font-size: .875rem; counter-increment: paso; }
+  .pasos li::before {
+    content: counter(paso); display: grid; place-items: center; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--texto); color: #fff; font-size: .75rem; font-weight: 700;
+  }
+  .lista-simple { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: .875rem; }
+  .lista-simple li { display: flex; align-items: baseline; gap: 10px; }
+  .lista-simple li::before {
+    content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--texto-2); transform: translateY(-3px);
+  }
+  .obligatorios summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    cursor: pointer; list-style: none; font-size: .9375rem; font-weight: 650; border-radius: 4px;
+  }
+  .obligatorios summary::-webkit-details-marker { display: none; }
+  .obligatorios summary .icono { width: 18px; height: 18px; color: var(--texto-2); transition: transform 200ms var(--ease-out); }
+  .obligatorios[open] summary .icono { transform: rotate(180deg); }
+  .obligatorios ol { display: grid; gap: 5px; margin: 14px 0 0; padding-left: 22px; font-size: .8125rem; color: var(--texto-2); }
+  .obligatorios ol li::marker { font-variant-numeric: tabular-nums; }
+
+  /* Resultados -------------------------------------------------------- */
+  .resultado { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 28px; }
+  .aviso {
+    display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 14px;
+    padding: 20px 22px; border: 1px solid; border-radius: var(--radio);
+  }
+  .aviso > .icono { width: 24px; height: 24px; margin-top: 1px; }
+  .aviso h2 { margin: 0 0 4px; font-size: 1.0625rem; font-weight: 650; }
+  .aviso h2:focus { outline: none; }
+  .aviso p { margin: 0 0 6px; }
+  .aviso .acciones { margin-top: 16px; }
+  .aviso--exito { background: var(--exito-fondo); border-color: var(--exito-borde); }
+  .aviso--exito > .icono, .aviso--exito h2 { color: var(--exito); }
+  .aviso--exito .datos dt, .aviso--exito .secundario { color: var(--exito-2); }
+  .aviso--error { background: var(--error-fondo); border-color: var(--error-borde); }
+  .aviso--error > .icono, .aviso--error h2 { color: var(--error); }
+  .aviso--error .secundario { color: var(--error-2); }
+  .aviso--ambar { background: var(--aviso-fondo); border-color: var(--aviso-borde); }
+  .aviso--ambar > .icono, .aviso--ambar h2 { color: var(--aviso); }
+  .aviso--ambar .datos dt, .aviso--ambar .secundario { color: var(--aviso-2); }
+  .secundario { font-size: .875rem; }
+  .datos {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 18px;
+    margin: 14px 0 0; font-size: .875rem;
+  }
+  .datos dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+  .reporte {
+    overflow: hidden; background: var(--fondo); border: 1px solid var(--borde);
+    border-radius: var(--radio); box-shadow: var(--sombra);
+  }
+  .reporte__cabecera {
+    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px;
+    padding: 20px 24px; border-bottom: 1px solid var(--borde);
+  }
+  .reporte__estado { display: flex; gap: 12px; min-width: 0; flex: 1 1 320px; }
+  .reporte__estado .icono { width: 28px; height: 28px; margin-top: 1px; color: var(--error); }
+  .reporte__estado h2 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+  .reporte__estado h2:focus { outline: none; }
+  .reporte__estado p { margin: 2px 0 0; color: var(--texto-2); overflow-wrap: anywhere; }
+  .reporte__cabecera .acciones { margin-top: 0; }
+  .reporte__nota {
+    display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 24px;
+    background: var(--aviso-fondo); border-bottom: 1px solid var(--aviso-borde); color: var(--aviso); font-size: .875rem;
+  }
+  .reporte__nota .icono { width: 18px; height: 18px; margin-top: 1px; }
+  .reporte__cuerpo { transition: opacity 200ms ease; }
+  .reporte.desactualizado .reporte__cuerpo { opacity: .5; }
+  .cifras { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid var(--borde); }
+  .cifras > div { padding: 16px 24px; border-right: 1px solid var(--borde); }
+  .cifras > div:last-child { border-right: 0; }
+  .cifras dt { font-size: .8125rem; color: var(--texto-2); }
+  .cifras dd { margin: 2px 0 0; font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .cifras .critica dd { color: var(--error); }
+  .seccion { padding: 20px 24px; border-bottom: 1px solid var(--borde); }
+  .seccion:last-child { border-bottom: 0; }
+  .seccion h3 { margin: 0 0 12px; font-size: .9375rem; font-weight: 650; }
+  .hallazgos { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .hallazgos li { padding: 12px 14px; border: 1px solid var(--error-borde); border-radius: 8px; background: var(--error-fondo); }
+  .hallazgo__tipo { font-weight: 650; color: var(--error); }
+  .hallazgo__texto { margin: 2px 0 0; }
+  .hallazgo__correccion { margin: 4px 0 0; font-size: .875rem; color: var(--error-2); }
+  .hallazgos--aviso li { border-color: var(--aviso-borde); background: var(--aviso-fondo); }
+  .hallazgos--aviso .hallazgo__tipo { color: var(--aviso); }
+  .hallazgos--aviso .hallazgo__correccion { color: var(--aviso-2); }
+
+  .barra-tabla { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .barra-tabla h3 { margin: 0; }
+  .filtros { display: flex; flex-wrap: wrap; gap: 12px; }
+  .filtros label { display: flex; flex-direction: column; gap: 4px; font-size: .75rem; font-weight: 600; color: var(--texto-2); }
+  .filtros select {
+    height: 36px; max-width: 300px; padding: 0 34px 0 10px; appearance: none;
+    border: 1px solid var(--borde-fuerte); border-radius: var(--radio-sm); font-size: .875rem; cursor: pointer;
+    background: var(--fondo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236E6A66' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 16px;
+    color: var(--texto);
+  }
+  .tabla-contenedor {
+    max-height: 560px; overflow: auto; border: 1px solid var(--borde); border-radius: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--borde-fuerte) transparent;
+  }
+  .tabla-contenedor:focus-visible { outline-offset: 0; }
+  .tabla-contenedor::-webkit-scrollbar { width: 10px; height: 10px; }
+  .tabla-contenedor::-webkit-scrollbar-thumb { background: var(--borde-fuerte); border-radius: 10px; border: 2px solid var(--fondo); }
+  .tabla { width: 100%; min-width: 820px; border-collapse: separate; border-spacing: 0; font-size: .875rem; }
+  .tabla th {
+    position: sticky; top: 0; z-index: 1; padding: 10px 12px; text-align: left; white-space: nowrap;
+    background: var(--fondo-2); border-bottom: 1px solid var(--borde);
+    font-size: .75rem; font-weight: 650; color: var(--texto-2);
+  }
+  .tabla td { padding: 11px 12px; vertical-align: top; border-bottom: 1px solid var(--borde); }
+  .tabla tbody tr:last-child td { border-bottom: 0; }
+  .tabla .num { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+  .tabla .col-columna { width: 22%; }
+  .tabla .col-valor { width: 18%; }
+  .letra {
+    display: inline-block; min-width: 22px; margin-left: 6px; padding: 0 5px; text-align: center;
+    border: 1px solid var(--borde-fuerte); border-radius: 4px; font-size: .6875rem; font-weight: 650; color: var(--texto-2);
+    vertical-align: 1px;
+  }
+  .valor { padding: 1px 6px; border-radius: 4px; background: var(--fondo-2); font-family: var(--mono); font-size: .8125rem; overflow-wrap: anywhere; }
+  .vacio { font-style: italic; color: var(--texto-2); }
+  .problema strong { display: block; font-weight: 600; }
+  .problema span, .correccion { color: var(--texto-2); }
+  .pie-tabla { margin: 10px 0 0; font-size: .8125rem; color: var(--texto-2); }
+
+  /* Movimiento -------------------------------------------------------- */
+  .aparece { animation: aparecer 260ms var(--ease-out) both; }
+  @keyframes aparecer { from { opacity: 0; transform: translateY(8px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aparece { animation: desvanecer 200ms ease both; }
+    @keyframes desvanecer { from { opacity: 0; } }
+    .progreso__barra span { width: 100%; animation: pulso 1.6s ease-in-out infinite; }
+    @keyframes pulso { 50% { opacity: .35; } }
+    .boton:active:not(:disabled) { transform: none; }
+    .zona.arrastrando .zona__icono { transform: none; }
+    .girador { animation-duration: 1.4s; }
+  }
+
+  /* Pantallas pequeñas ------------------------------------------------ */
+  @media (max-width: 900px) {
+    .disposicion { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  }
+  @media (max-width: 640px) {
+    .barra__interior { padding: 10px 16px; }
+    .marca__modulo span { display: none; }
+    .sesion .icono { display: none; }
+    .contenedor { padding: 24px 16px 56px; }
+    .intro h1 { font-size: 1.5rem; }
+    .panel { padding: 18px; }
+    .zona { min-height: 180px; }
+    .cifras { grid-template-columns: minmax(0, 1fr); }
+    .cifras > div { display: flex; align-items: baseline; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--borde); padding: 12px 18px; }
+    .cifras > div:last-child { border-bottom: 0; }
+    .cifras dd { font-size: 1.25rem; }
+    .reporte__cabecera, .seccion { padding-left: 18px; padding-right: 18px; }
+    .reporte__nota { padding-left: 18px; padding-right: 18px; }
+    .acciones .boton { flex: 1 1 auto; }
+    .aviso { padding: 18px; gap: 12px; }
+    .datos { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .datos dd { margin-bottom: 8px; }
+  }
+  @media (max-width: 480px) {
+    .sesion { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-subir" viewBox="0 0 24 24"><path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-hoja" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 12.5h7M8.5 16h7M12 11v7"/></symbol>
+  <symbol id="i-cerrar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 5-5.5"/></symbol>
+  <symbol id="i-rechazo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 24 24"><path d="M10.3 4.2 2.9 17a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-bajar" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/></symbol>
+  <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+  <symbol id="i-reintentar" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4.5h-4.5"/></symbol>
+  <symbol id="i-abajo" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</svg>
+
+<a class="saltar" href="#principal">Saltar al contenido</a>
+
+<header class="barra">
+  <div class="barra__interior">
+    <div class="marca">
+      <img id="logo" class="marca__logo" alt="Davivienda" hidden>
+      <span id="logo-texto" class="marca__texto" hidden>Davivienda</span>
+      <span class="marca__separador" aria-hidden="true"></span>
+      <div class="marca__modulo"><strong>PREMIOS</strong><span>Recepción de plantillas</span></div>
+    </div>
+    <div id="sesion" class="sesion" hidden>
+      <svg class="icono" aria-hidden="true"><use href="#i-usuario"/></svg>
+      <span id="correo-usuario"></span>
+    </div>
+  </div>
+</header>
+
+<main id="principal" class="contenedor">
+  <div class="intro">
+    <h1>Cargue la plantilla de PREMIOS de su oficina</h1>
+    <p>Cada registro se revisa antes de guardarse. Si algo no cumple, verá la fila, la columna y cómo corregirlo; si todo está bien, el archivo queda guardado en la carpeta del mes.</p>
+  </div>
+
+  <div class="disposicion">
+    <section class="panel" aria-labelledby="t-carga">
+      <h2 id="t-carga" class="panel__titulo">Archivo a validar</h2>
+
+      <div class="campo">
+        <label for="oficina">Oficina</label>
+        <input id="oficina" type="text" maxlength="120" autocomplete="organization"
+               placeholder="Ej.: Oficina Centro Internacional" aria-describedby="oficina-ayuda">
+        <p id="oficina-ayuda" class="ayuda">Nombre de la oficina que reporta esta plantilla.</p>
+        <p id="oficina-error" class="error-campo" hidden></p>
+      </div>
+
+      <label id="zona" class="zona">
+        <input id="entrada" type="file" class="solo-lector"
+               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        <span class="zona__icono" aria-hidden="true"><svg class="icono"><use href="#i-subir"/></svg></span>
+        <span class="zona__titulo">Arrastre aquí su archivo .xlsx</span>
+        <span class="zona__texto">o <span class="zona__enlace">selecciónelo desde su equipo</span></span>
+        <span id="zona-nota" class="zona__nota">Libro de Excel (.xlsx) · hasta 5 MB</span>
+      </label>
+
+      <div id="archivo" class="archivo" hidden>
+        <span class="archivo__icono" aria-hidden="true"><svg class="icono"><use href="#i-hoja"/></svg></span>
+        <div class="archivo__info">
+          <div id="archivo-nombre" class="archivo__nombre"></div>
+          <div id="archivo-meta" class="archivo__meta"></div>
+        </div>
+        <div class="archivo__acciones">
+          <button id="btn-cambiar" type="button" class="boton boton--sutil">Cambiar</button>
+          <button id="btn-quitar" type="button" class="boton boton--sutil boton--icono" aria-label="Quitar archivo seleccionado">
+            <svg class="icono" aria-hidden="true"><use href="#i-cerrar"/></svg>
+          </button>
+        </div>
+      </div>
+      <p id="archivo-error" class="error-campo" hidden></p>
+
+      <div id="acciones-carga" class="acciones">
+        <button id="btn-validar" type="button" class="boton boton--primario">Validar archivo</button>
+      </div>
+
+      <div id="progreso" class="progreso" hidden>
+        <div class="progreso__cabecera">
+          <span id="progreso-texto">Leyendo el archivo…</span>
+          <span id="progreso-tiempo" class="progreso__tiempo"></span>
+        </div>
+        <p id="progreso-detalle" class="progreso__detalle" hidden></p>
+        <div class="progreso__barra" aria-hidden="true"><span></span></div>
+        <ol class="etapas">
+          <li id="etapa-validar">Validación</li>
+          <li id="etapa-guardar">Guardado en Google Drive</li>
+        </ol>
+      </div>
+    </section>
+
+    <aside class="guia" aria-label="Instrucciones de carga">
+      <section class="guia__bloque">
+        <h2>Cómo cargar</h2>
+        <ol class="pasos">
+          <li>Descargue la plantilla oficial y diligénciela sin cambiar los encabezados.</li>
+          <li>Escriba su oficina y seleccione o arrastre el archivo .xlsx.</li>
+          <li>Presione «Validar archivo». Si todo está bien, se guarda automáticamente; si no, verá exactamente qué corregir.</li>
+        </ol>
+      </section>
+      <section class="guia__bloque">
+        <h2>Plantilla oficial</h2>
+        <p>Es la única estructura que se acepta: 22 columnas con los encabezados de la fila 1.</p>
+        <button id="btn-plantilla" type="button" class="boton boton--secundario">
+          <svg class="icono" aria-hidden="true"><use href="#i-bajar"/></svg>
+          <span>Descargar plantilla oficial</span>
+        </button>
+        <p id="plantilla-error" class="error-campo" hidden></p>
+      </section>
+      <section class="guia__bloque">
+        <h2>Archivo permitido</h2>
+        <ul class="lista-simple">
+          <li>Libro de Excel (.xlsx)</li>
+          <li id="regla-tamano">Hasta 5 MB</li>
+          <li>Un archivo por carga</li>
+          <li>Encabezados iguales a los de la plantilla oficial</li>
+        </ul>
+      </section>
+      <details class="obligatorios">
+        <summary>
+          <span id="titulo-obligatorios">Campos obligatorios</span>
+          <svg class="icono" aria-hidden="true"><use href="#i-abajo"/></svg>
+        </summary>
+        <ol id="lista-obligatorios"></ol>
+      </details>
+    </aside>
+  </div>
+
+  <div id="resultado" class="resultado">
+
+    <div id="panel-duplicado" class="aviso aviso--ambar" hidden>
+      <svg class="icono" aria-hidden="true"><use href="#i-alerta"/></svg>
+      <div>
+        <h2 id="dup-titulo" tabindex="-1">Este contenido ya se cargó antes</h2>
+        <p id="dup-texto"></p>
+        <dl id="dup-datos" class="datos"></dl>
+        <p class="secundario" style="margin-top:14px">Si continúa, el archivo se validará y se guardará como una carga adicional.</p>
+        <div class="acciones">
+          <button id="btn-dup-continuar" type="button" class="boton boton--primario">Continuar con la carga</button>
+          <button id="btn-dup-otro" type="button" class="boton boton--secundario">Elegir otro archivo</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-error" class="aviso aviso--error" role="alert" hidden>
+      <svg class="icono" aria-hidden="true"><use href="#i-alerta"/></svg>
+      <div>
+        <h2 id="error-titulo" tabindex="-1"></h2>
+        <p id="error-texto"></p>
+        <p id="error-ref" class="secundario" hidden></p>
+        <div class="acciones">
+          <button id="btn-reintentar" type="button" class="boton boton--primario">
+            <svg class="icono" aria-hidden="true"><use href="#i-reintentar"/></svg>
+            <span id="btn-reintentar-texto">Intentar de nuevo</span>
+          </button>
+          <button id="btn-error-otro" type="button" class="boton boton--secundario">Elegir otro archivo</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-exito" class="aviso aviso--exito" hidden>
+      <svg class="icono" aria-hidden="true"><use href="#i-ok"/></svg>
+      <div>
+        <h2 id="exito-titulo" tabindex="-1">Carga completada</h2>
+        <p>El archivo superó todas las validaciones y quedó guardado en Google Drive.</p>
+        <p id="exito-repetido" class="secundario" hidden>Esta carga ya se había guardado con la misma validación; no se creó una copia adicional.</p>
+        <dl id="exito-datos" class="datos"></dl>
+        <div id="exito-advertencias" hidden style="margin-top:16px">
+          <p class="secundario" style="font-weight:600">Advertencias (no impidieron la carga)</p>
+          <ul id="exito-lista-advertencias" class="hallazgos hallazgos--aviso"></ul>
+        </div>
+        <div class="acciones">
+          <button id="btn-otro" type="button" class="boton boton--secundario">Cargar otro archivo</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="panel-reporte" class="reporte" aria-labelledby="reporte-titulo" hidden>
+      <header class="reporte__cabecera">
+        <div class="reporte__estado">
+          <svg class="icono" aria-hidden="true"><use href="#i-rechazo"/></svg>
+          <div>
+            <h2 id="reporte-titulo" tabindex="-1">Archivo rechazado</h2>
+            <p id="reporte-archivo"></p>
+          </div>
+        </div>
+        <div class="acciones">
+          <button id="btn-corregida" type="button" class="boton boton--primario">Seleccionar versión corregida</button>
+          <button id="btn-revalidar" type="button" class="boton boton--secundario">Validar de nuevo</button>
+          <button id="btn-descargar-reporte" type="button" class="boton boton--secundario">
+            <svg class="icono" aria-hidden="true"><use href="#i-bajar"/></svg>
+            <span>Descargar reporte (.xlsx)</span>
+          </button>
+        </div>
+      </header>
+      <p id="reporte-nota" class="reporte__nota" hidden>
+        <svg class="icono" aria-hidden="true"><use href="#i-info"/></svg>
+        <span id="reporte-nota-texto"></span>
+      </p>
+      <p id="descarga-error" class="error-campo" style="margin:12px 24px 0" hidden></p>
+
+      <div class="reporte__cuerpo">
+        <dl class="cifras">
+          <div><dt>Registros revisados</dt><dd id="c-registros">0</dd></div>
+          <div class="critica"><dt>Filas con inconsistencias</dt><dd id="c-filas">0</dd></div>
+          <div class="critica"><dt>Errores detectados</dt><dd id="c-errores">0</dd></div>
+        </dl>
+
+        <div id="reporte-estructura" class="seccion" hidden>
+          <h3>Estructura del archivo</h3>
+          <ul id="lista-estructura" class="hallazgos"></ul>
+        </div>
+
+        <div id="reporte-registros" class="seccion" hidden>
+          <div class="barra-tabla">
+            <h3>Errores por registro</h3>
+            <div class="filtros">
+              <label>Columna<select id="f-columna"></select></label>
+              <label>Tipo de error<select id="f-tipo"></select></label>
+            </div>
+          </div>
+          <p id="reporte-truncado" class="reporte__nota" style="border:1px solid var(--aviso-borde);border-radius:8px;margin-bottom:12px" hidden></p>
+          <div class="tabla-contenedor" tabindex="0" role="region" aria-label="Detalle de errores por registro">
+            <table class="tabla">
+              <thead>
+                <tr>
+                  <th scope="col" class="num">Fila</th>
+                  <th scope="col" class="col-columna">Columna</th>
+                  <th scope="col" class="col-valor">Valor encontrado</th>
+                  <th scope="col">Problema</th>
+                  <th scope="col">Cómo corregirlo</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-cuerpo"></tbody>
+            </table>
+          </div>
+          <p id="tabla-conteo" class="pie-tabla"></p>
+        </div>
+
+        <div id="reporte-advertencias" class="seccion" hidden>
+          <h3>Advertencias</h3>
+          <ul id="lista-advertencias" class="hallazgos hallazgos--aviso"></ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="anuncio" class="solo-lector" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var INICIAL = <?!= jsonSeguro_(inicial) ?>;
+
+  /* Estado --------------------------------------------------------------- */
+  var FASES_OCUPADAS = ['leyendo', 'validando', 'valido', 'almacenando'];
+  var CODIGOS_REVALIDAR = ['VALIDACION_VENCIDA', 'ARCHIVO_MODIFICADO', 'VALIDACION_REQUERIDA'];
+  var estado = {
+    fase: 'inicial',
+    archivo: null,
+    base64: null,
+    oficinaValidada: '',
+    token: null,
+    confirmarDuplicado: false,
+    reporte: null,
+    reporteVigente: false,
+    validacion: null,
+    duplicado: null,
+    resultado: null,
+    error: null,
+    inicio: 0,
+    reloj: null
+  };
+
+  var numero = new Intl.NumberFormat('es-CO');
+  var decimal = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 });
+
+  var el = {};
+  [
+    'logo', 'logo-texto', 'sesion', 'correo-usuario', 'oficina', 'oficina-error', 'zona', 'zona-nota', 'entrada',
+    'archivo', 'archivo-nombre', 'archivo-meta', 'btn-cambiar', 'btn-quitar', 'archivo-error', 'acciones-carga',
+    'btn-validar', 'progreso', 'progreso-texto', 'progreso-tiempo', 'progreso-detalle', 'etapa-validar',
+    'etapa-guardar', 'btn-plantilla', 'plantilla-error', 'regla-tamano', 'titulo-obligatorios', 'lista-obligatorios',
+    'panel-duplicado', 'dup-titulo', 'dup-texto', 'dup-datos', 'btn-dup-continuar', 'btn-dup-otro',
+    'panel-error', 'error-titulo', 'error-texto', 'error-ref', 'btn-reintentar', 'btn-reintentar-texto', 'btn-error-otro',
+    'panel-exito', 'exito-titulo', 'exito-repetido', 'exito-datos', 'exito-advertencias', 'exito-lista-advertencias', 'btn-otro',
+    'panel-reporte', 'reporte-titulo', 'reporte-archivo', 'btn-corregida', 'btn-revalidar', 'btn-descargar-reporte',
+    'reporte-nota', 'reporte-nota-texto', 'descarga-error', 'c-registros', 'c-filas', 'c-errores',
+    'reporte-estructura', 'lista-estructura', 'reporte-registros', 'f-columna', 'f-tipo', 'reporte-truncado',
+    'tabla-cuerpo', 'tabla-conteo', 'reporte-advertencias', 'lista-advertencias', 'anuncio'
+  ].forEach(function (id) {
+    el[id.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); })] = document.getElementById(id);
+  });
+
+  /* Utilidades ----------------------------------------------------------- */
+  function tamano(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return decimal.format(bytes / 1024) + ' KB';
+    return decimal.format(bytes / 1048576) + ' MB';
+  }
+
+  function extension(nombre) {
+    var m = /\.([^.]+)$/.exec(nombre || '');
+    return m ? m[1].toUpperCase() : 'SIN EXTENSIÓN';
+  }
+
+  function crear(etiqueta, clase, texto) {
+    var nodo = document.createElement(etiqueta);
+    if (clase) nodo.className = clase;
+    if (texto != null) nodo.textContent = texto;
+    return nodo;
+  }
+
+  function vaciar(nodo) { while (nodo.firstChild) nodo.removeChild(nodo.firstChild); }
+
+  function anunciar(mensaje) {
+    el.anuncio.textContent = '';
+    window.setTimeout(function () { el.anuncio.textContent = mensaje; }, 60);
+  }
+
+  function enfocar(nodo) {
+    window.requestAnimationFrame(function () {
+      nodo.focus({ preventScroll: true });
+      nodo.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+
+  function mostrar(nodo, visible) {
+    if (visible && nodo.hidden) {
+      nodo.hidden = false;
+      nodo.classList.remove('aparece');
+      void nodo.offsetWidth;
+      nodo.classList.add('aparece');
+    } else if (!visible) {
+      nodo.hidden = true;
+    }
+  }
+
+  function errorEnCampo(nodo, mensaje) {
+    vaciar(nodo);
+    if (!mensaje) { nodo.hidden = true; return; }
+    var icono = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icono.setAttribute('class', 'icono');
+    icono.setAttribute('aria-hidden', 'true');
+    var uso = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    uso.setAttribute('href', '#i-alerta');
+    icono.appendChild(uso);
+    nodo.appendChild(icono);
+    nodo.appendChild(crear('span', '', mensaje));
+    nodo.hidden = false;
+  }
+
+  function leerPreferencia(clave) {
+    try { return window.localStorage.getItem(clave) || ''; } catch (e) { return ''; }
+  }
+
+  function guardarPreferencia(clave, valor) {
+    try { window.localStorage.setItem(clave, valor); } catch (e) { /* sin almacenamiento local */ }
+  }
+
+  function llenarDatos(dl, filas) {
+    vaciar(dl);
+    filas.forEach(function (fila) {
+      if (fila[1] === '' || fila[1] == null) return;
+      dl.appendChild(crear('dt', '', fila[0]));
+      dl.appendChild(crear('dd', '', String(fila[1])));
+    });
+  }
+
+  function itemHallazgo(h) {
+    var li = crear('li');
+    var tipo = h.tipoTexto + (h.letra ? ' · columna ' + h.letra : '') + (h.fila ? ' · fila ' + h.fila : '');
+    li.appendChild(crear('div', 'hallazgo__tipo', tipo));
+    li.appendChild(crear('p', 'hallazgo__texto', h.descripcion));
+    if (h.recomendacion) li.appendChild(crear('p', 'hallazgo__correccion', 'Cómo corregirlo: ' + h.recomendacion));
+    return li;
+  }
+
+  /* Comunicación con el servidor ---------------------------------------- */
+  function llamar(funcion, argumento) {
+    return new Promise(function (resolver, rechazar) {
+      var ejecucion = google.script.run
+        .withSuccessHandler(function (respuesta) {
+          if (respuesta && respuesta.ok) resolver(respuesta.datos);
+          else rechazar((respuesta && respuesta.error) || { codigo: 'SIN_RESPUESTA', mensaje: 'El servidor no devolvió una respuesta válida. Intente de nuevo.' });
+        })
+        .withFailureHandler(function (error) {
+          rechazar({
+            codigo: 'FALLA_CONEXION',
+            mensaje: 'No hubo respuesta del servidor. Revise su conexión a internet e intente de nuevo; si el problema continúa, recargue la página.',
+            tecnico: String(error && error.message ? error.message : error)
+          });
+        });
+      if (argumento === undefined) ejecucion[funcion]();
+      else ejecucion[funcion](argumento);
+    });
+  }
+
+  function leerComoBase64(archivo) {
+    return new Promise(function (resolver, rechazar) {
+      var lector = new FileReader();
+      lector.onload = function () {
+        var resultado = String(lector.result || '');
+        resolver(resultado.slice(resultado.indexOf(',') + 1));
+      };
+      lector.onerror = function () {
+        rechazar(new Error('No se pudo leer «' + archivo.name + '». Si lo modificó o lo movió después de seleccionarlo, selecciónelo de nuevo.'));
+      };
+      lector.readAsDataURL(archivo);
+    });
+  }
+
+  function descargar(nombre, base64, tipo) {
+    var binario = window.atob(base64);
+    var bytes = new Uint8Array(binario.length);
+    for (var i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    var url = URL.createObjectURL(new Blob([bytes], { type: tipo }));
+    var enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = nombre;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function botonOcupado(boton, ocupado, textoOcupado) {
+    if (ocupado) {
+      boton.dataset.html = boton.innerHTML;
+      boton.disabled = true;
+      vaciar(boton);
+      boton.appendChild(crear('span', 'girador'));
+      boton.appendChild(crear('span', '', textoOcupado));
+    } else if (boton.dataset.html) {
+      boton.innerHTML = boton.dataset.html;
+      delete boton.dataset.html;
+      boton.disabled = false;
+    }
+  }
+
+  /* Selección de archivo ------------------------------------------------- */
+  function verificarArchivoLocal(archivo) {
+    if (!/\.xlsx$/i.test(archivo.name)) {
+      return '«' + archivo.name + '» no es un archivo .xlsx. Solo se aceptan libros de Excel (.xlsx); si su archivo es .xls o .csv, ábralo en Excel y use «Guardar como» → «Libro de Excel (.xlsx)».';
+    }
+    if (archivo.size === 0) return '«' + archivo.name + '» está vacío (0 bytes).';
+    if (archivo.size > INICIAL.maxBytes) {
+      return '«' + archivo.name + '» pesa ' + tamano(archivo.size) + '; el máximo permitido es ' + tamano(INICIAL.maxBytes) + '.';
+    }
+    return '';
+  }
+
+  function seleccionarArchivo(lista) {
+    if (!lista || !lista.length || ocupado()) return;
+    if (lista.length > 1) {
+      errorEnCampo(el.archivoError, 'Arrastró ' + lista.length + ' archivos. Se carga un archivo a la vez: seleccione solo uno.');
+      return;
+    }
+    var archivo = lista[0];
+    var problema = verificarArchivoLocal(archivo);
+    if (problema) {
+      errorEnCampo(el.archivoError, problema);
+      anunciar(problema);
+      return;
+    }
+    errorEnCampo(el.archivoError, '');
+    estado.archivo = archivo;
+    estado.base64 = null;
+    estado.token = null;
+    estado.confirmarDuplicado = false;
+    estado.duplicado = null;
+    estado.resultado = null;
+    estado.validacion = null;
+    estado.error = null;
+    estado.reporteVigente = false;
+    estado.fase = 'seleccionado';
+    render();
+    anunciar('Archivo seleccionado: ' + archivo.name + '. Presione «Validar archivo».');
+  }
+
+  function quitarArchivo() {
+    if (ocupado()) return;
+    estado.archivo = null;
+    estado.base64 = null;
+    estado.token = null;
+    estado.duplicado = null;
+    estado.error = null;
+    estado.reporteVigente = false;
+    estado.fase = 'inicial';
+    errorEnCampo(el.archivoError, '');
+    render();
+    el.entrada.focus();
+  }
+
+  function abrirSelector() {
+    if (!ocupado()) el.entrada.click();
+  }
+
+  /* Flujo principal ------------------------------------------------------ */
+  function ocupado() { return FASES_OCUPADAS.indexOf(estado.fase) !== -1; }
+
+  function cambiarFase(fase) {
+    estado.fase = fase;
+    if (ocupado()) iniciarReloj(); else detenerReloj();
+    render();
+  }
+
+  function validar(confirmarDuplicado) {
+    if (ocupado()) return;
+    var oficina = el.oficina.value.trim();
+    if (!oficina) {
+      el.oficina.setAttribute('aria-invalid', 'true');
+      errorEnCampo(el.oficinaError, 'Escriba el nombre de su oficina para continuar.');
+      el.oficina.focus();
+      return;
+    }
+    if (!estado.archivo) {
+      errorEnCampo(el.archivoError, 'Seleccione o arrastre el archivo .xlsx que desea validar.');
+      return;
+    }
+    estado.oficinaValidada = oficina;
+    estado.confirmarDuplicado = !!confirmarDuplicado;
+    estado.reporteVigente = false;
+    estado.token = null;
+    estado.error = null;
+    cambiarFase('leyendo');
+
+    leerComoBase64(estado.archivo).then(function (base64) {
+      estado.base64 = base64;
+      cambiarFase('validando');
+      return llamar('apiValidar', {
+        nombre: estado.archivo.name,
+        base64: base64,
+        oficina: oficina,
+        confirmarDuplicado: estado.confirmarDuplicado
+      }).then(procesarRespuesta).catch(function (error) {
+        estado.error = errorLegible(error);
+        estado.base64 = null;
+        cambiarFase('errorValidacion');
+        enfocar(el.errorTitulo);
+      });
+    }, function (error) {
+      estado.base64 = null;
+      cambiarFase('seleccionado');
+      errorEnCampo(el.archivoError, error.message);
+      anunciar(error.message);
+    });
+  }
+
+  function almacenar() {
+    if (!estado.token || !estado.base64) {
+      validar(estado.confirmarDuplicado);
+      return;
+    }
+    cambiarFase('almacenando');
+    llamar('apiAlmacenar', {
+      nombre: estado.archivo.name,
+      base64: estado.base64,
+      oficina: estado.oficinaValidada,
+      token: estado.token
+    }).then(procesarRespuesta).catch(function (error) {
+      estado.error = errorLegible(error);
+      cambiarFase('errorAlmacenamiento');
+      enfocar(el.errorTitulo);
+    });
+  }
+
+  /** Un error del servidor ya trae mensaje; uno inesperado en la página se traduce. */
+  function errorLegible(error) {
+    if (error && error.mensaje) return error;
+    if (window.console) console.error(error);
+    return {
+      codigo: 'ERROR_PAGINA',
+      mensaje: 'Ocurrió un problema inesperado en la página. Recárguela e intente de nuevo; si el problema continúa, informe al administrador.'
+    };
+  }
+
+  function procesarRespuesta(r) {
+    if (r.estado === 'DUPLICADO') {
+      estado.duplicado = r.duplicado;
+      estado.token = null;
+      estado.base64 = null;
+      renderDuplicado();
+      cambiarFase('duplicado');
+      anunciar('Este contenido ya se cargó antes. Confirme si desea continuar.');
+      enfocar(el.dupTitulo);
+    } else if (r.estado === 'RECHAZADO') {
+      estado.reporte = r.reporte;
+      estado.reporteVigente = true;
+      estado.token = null;
+      estado.base64 = null;
+      renderReporte();
+      cambiarFase('rechazado');
+      anunciar('Archivo rechazado: ' + numero.format(r.reporte.totalErrores) + ' errores. Revise el reporte.');
+      enfocar(el.reporteTitulo);
+    } else if (r.estado === 'VALIDO') {
+      estado.validacion = r.reporte;
+      estado.reporte = null;
+      estado.token = r.token;
+      cambiarFase('valido');
+      anunciar('Validación superada. Guardando el archivo en Google Drive.');
+      almacenar();
+    } else if (r.estado === 'ALMACENADO') {
+      estado.resultado = r.almacenamiento;
+      estado.base64 = null;
+      estado.token = null;
+      renderExito();
+      cambiarFase('completado');
+      anunciar('Carga completada. Folio ' + r.almacenamiento.folio + '.');
+      enfocar(el.exitoTitulo);
+    }
+  }
+
+  function reintentar() {
+    var codigo = estado.error && estado.error.codigo;
+    if (estado.fase === 'errorAlmacenamiento' && CODIGOS_REVALIDAR.indexOf(codigo) === -1) almacenar();
+    else validar(estado.confirmarDuplicado);
+  }
+
+  function reiniciar() {
+    estado.archivo = null;
+    estado.base64 = null;
+    estado.token = null;
+    estado.reporte = null;
+    estado.reporteVigente = false;
+    estado.validacion = null;
+    estado.duplicado = null;
+    estado.resultado = null;
+    estado.error = null;
+    estado.fase = 'inicial';
+    render();
+    el.zona.scrollIntoView({ block: 'center' });
+    el.entrada.focus();
+  }
+
+  /* Descargas ------------------------------------------------------------ */
+  function descargarPlantilla() {
+    errorEnCampo(el.plantillaError, '');
+    botonOcupado(el.btnPlantilla, true, 'Preparando…');
+    llamar('apiDescargarPlantilla').then(function (r) {
+      descargar(r.nombre, r.base64, r.mime);
+      anunciar('Plantilla oficial descargada.');
+    }, function (error) {
+      errorEnCampo(el.plantillaError, error.mensaje);
+    }).then(function () { botonOcupado(el.btnPlantilla, false); });
+  }
+
+  function descargarReporte() {
+    if (!estado.reporte) return;
+    errorEnCampo(el.descargaError, '');
+    botonOcupado(el.btnDescargarReporte, true, 'Generando…');
+    llamar('apiDescargarReporte', estado.reporte).then(function (r) {
+      descargar(r.nombre, r.base64, r.mime);
+      anunciar('Reporte de inconsistencias descargado.');
+    }, function (error) {
+      errorEnCampo(el.descargaError, error.mensaje);
+    }).then(function () { botonOcupado(el.btnDescargarReporte, false); });
+  }
+
+  /* Reloj ---------------------------------------------------------------- */
+  function iniciarReloj() {
+    if (estado.reloj) return;
+    estado.inicio = Date.now();
+    el.progresoTiempo.textContent = '';
+    estado.reloj = window.setInterval(function () {
+      var segundos = Math.floor((Date.now() - estado.inicio) / 1000);
+      el.progresoTiempo.textContent = segundos >= 3 ? segundos + ' s' : '';
+    }, 1000);
+  }
+
+  function detenerReloj() {
+    if (estado.reloj) window.clearInterval(estado.reloj);
+    estado.reloj = null;
+  }
+
+  /* Render --------------------------------------------------------------- */
+  function render() {
+    var f = estado.fase;
+    var trabajando = ocupado();
+
+    el.zona.hidden = !!estado.archivo;
+    el.archivo.hidden = !estado.archivo;
+    if (estado.archivo) {
+      el.archivoNombre.textContent = estado.archivo.name;
+      el.archivoNombre.title = estado.archivo.name;
+      el.archivoMeta.textContent = extension(estado.archivo.name) + ' · ' + tamano(estado.archivo.size);
+    }
+    el.entrada.disabled = trabajando;
+    el.oficina.disabled = trabajando;
+    el.btnCambiar.disabled = trabajando;
+    el.btnQuitar.disabled = trabajando;
+
+    el.accionesCarga.hidden = f === 'completado';
+    if (trabajando) {
+      if (!el.btnValidar.dataset.html) botonOcupado(el.btnValidar, true, 'Procesando…');
+    } else {
+      botonOcupado(el.btnValidar, false);
+      el.btnValidar.disabled = !estado.archivo;
+    }
+
+    el.progreso.hidden = !trabajando;
+    var guardando = f === 'valido' || f === 'almacenando';
+    el.progresoTexto.textContent = f === 'leyendo' ? 'Leyendo el archivo en su equipo…'
+      : f === 'validando' ? 'Validando estructura y registros…'
+      : 'Guardando en Google Drive…';
+    el.progresoDetalle.hidden = !guardando || !estado.validacion;
+    if (guardando && estado.validacion) {
+      el.progresoDetalle.textContent = 'Validación superada: ' + numero.format(estado.validacion.registrosRevisados) +
+        ' registros sin inconsistencias.';
+    }
+    el.etapaValidar.dataset.estado = guardando ? 'hecha' : 'activa';
+    el.etapaGuardar.dataset.estado = guardando ? 'activa' : '';
+
+    mostrar(el.panelDuplicado, f === 'duplicado');
+    mostrar(el.panelError, f === 'errorValidacion' || f === 'errorAlmacenamiento');
+    mostrar(el.panelExito, f === 'completado');
+    mostrar(el.panelReporte, !!estado.reporte && f !== 'completado' && f !== 'duplicado');
+    if (f === 'errorValidacion' || f === 'errorAlmacenamiento') renderError();
+
+    var desactualizado = !!estado.reporte && !estado.reporteVigente;
+    el.panelReporte.classList.toggle('desactualizado', desactualizado);
+    el.reporteNota.hidden = !desactualizado;
+    if (desactualizado) {
+      el.reporteNotaTexto.textContent = trabajando
+        ? 'Validando la nueva versión. Este reporte corresponde a «' + estado.reporte.archivo + '».'
+        : 'Este reporte corresponde a «' + estado.reporte.archivo + '». Valide la versión corregida para actualizarlo.';
+    }
+    el.btnCorregida.disabled = trabajando;
+    el.btnRevalidar.disabled = trabajando || !estado.archivo;
+    if (!el.btnDescargarReporte.dataset.html) el.btnDescargarReporte.disabled = trabajando;
+    el.btnDupContinuar.disabled = trabajando;
+    el.btnReintentar.disabled = trabajando;
+  }
+
+  function renderError() {
+    var almacenamiento = estado.fase === 'errorAlmacenamiento';
+    var error = estado.error || {};
+    var revalidar = CODIGOS_REVALIDAR.indexOf(error.codigo) !== -1;
+    el.errorTitulo.textContent = almacenamiento ? 'No se pudo guardar el archivo' : 'No se pudo completar la validación';
+    el.errorTexto.textContent = error.mensaje || 'Ocurrió un problema inesperado. Intente de nuevo.';
+    el.errorRef.hidden = !error.referencia;
+    el.errorRef.textContent = error.referencia ? 'Referencia para soporte: ' + error.referencia : '';
+    el.btnReintentarTexto.textContent = almacenamiento && !revalidar ? 'Reintentar guardado'
+      : revalidar ? 'Validar de nuevo' : 'Intentar de nuevo';
+  }
+
+  function renderDuplicado() {
+    var d = estado.duplicado;
+    el.dupTexto.textContent = '«' + estado.archivo.name + '» tiene exactamente el mismo contenido que un archivo que ya se guardó' +
+      (d.archivo && d.archivo !== estado.archivo.name ? ' con el nombre «' + d.archivo + '».' : '.');
+    llenarDatos(el.dupDatos, [
+      ['Cargado el', d.fecha],
+      ['Por', d.correo],
+      ['Oficina', d.oficina],
+      ['Carpeta', d.carpeta],
+      ['Folio', d.folio]
+    ]);
+  }
+
+  function renderExito() {
+    var r = estado.resultado;
+    el.exitoRepetido.hidden = !r.repetido;
+    llenarDatos(el.exitoDatos, [
+      ['Archivo', r.archivo],
+      ['Guardado en', r.carpeta],
+      ['Registros', numero.format(r.registros)],
+      ['Fecha y hora', r.fecha],
+      ['Folio', r.folio]
+    ]);
+    var advertencias = (estado.validacion && estado.validacion.advertencias) || [];
+    vaciar(el.exitoListaAdvertencias);
+    advertencias.forEach(function (a) { el.exitoListaAdvertencias.appendChild(itemHallazgo(a)); });
+    el.exitoAdvertencias.hidden = !advertencias.length;
+  }
+
+  function renderReporte() {
+    var r = estado.reporte;
+    el.reporteArchivo.textContent = r.archivo + (r.hoja ? ' · hoja «' + r.hoja + '»' : '') +
+      (r.filaEncabezado ? ' · encabezados en la fila ' + r.filaEncabezado : '');
+    el.cRegistros.textContent = numero.format(r.registrosRevisados);
+    el.cFilas.textContent = numero.format(r.filasConError);
+    el.cErrores.textContent = numero.format(r.totalErrores);
+
+    vaciar(el.listaEstructura);
+    r.erroresEstructura.forEach(function (e) { el.listaEstructura.appendChild(itemHallazgo(e)); });
+    el.reporteEstructura.hidden = !r.erroresEstructura.length;
+
+    vaciar(el.listaAdvertencias);
+    r.advertencias.forEach(function (a) { el.listaAdvertencias.appendChild(itemHallazgo(a)); });
+    el.reporteAdvertencias.hidden = !r.advertencias.length;
+
+    el.reporteRegistros.hidden = !r.errores.length;
+    el.reporteTruncado.hidden = !r.truncado;
+    if (r.truncado) {
+      el.reporteTruncado.textContent = 'Se muestran los primeros ' + numero.format(r.errores.length) + ' errores de registro. ' +
+        'Corríjalos y vuelva a validar para ver los siguientes; los totales de arriba sí incluyen todos.';
+    }
+
+    llenarFiltro(el.fColumna, 'Todas las columnas', r.resumenColumnas.map(function (c) {
+      return { valor: c.letra, texto: c.columna + ' (' + c.letra + ') · ' + numero.format(c.total) };
+    }));
+    llenarFiltro(el.fTipo, 'Todos los tipos', r.resumenTipos.map(function (t) {
+      return { valor: t.tipo, texto: t.tipoTexto + ' · ' + numero.format(t.total) };
+    }));
+    renderTabla();
+  }
+
+  function llenarFiltro(select, todos, opciones) {
+    vaciar(select);
+    var primera = crear('option', '', todos);
+    primera.value = '';
+    select.appendChild(primera);
+    opciones.forEach(function (o) {
+      var opcion = crear('option', '', o.texto);
+      opcion.value = o.valor;
+      select.appendChild(opcion);
+    });
+  }
+
+  function renderTabla() {
+    var r = estado.reporte;
+    if (!r) return;
+    var columna = el.fColumna.value;
+    var tipo = el.fTipo.value;
+    var visibles = r.errores.filter(function (e) {
+      return (!columna || e.letra === columna) && (!tipo || e.tipo === tipo);
+    });
+    var cuerpo = document.createDocumentFragment();
+    visibles.forEach(function (e) {
+      var tr = crear('tr');
+      tr.appendChild(crear('td', 'num', numero.format(e.fila)));
+
+      var celdaColumna = crear('td', '', e.columna);
+      celdaColumna.appendChild(crear('span', 'letra', e.letra));
+      tr.appendChild(celdaColumna);
+
+      var celdaValor = crear('td');
+      if (e.valor == null || String(e.valor).trim() === '') celdaValor.appendChild(crear('span', 'vacio', 'Vacío'));
+      else celdaValor.appendChild(crear('span', 'valor', e.valor));
+      tr.appendChild(celdaValor);
+
+      var celdaProblema = crear('td', 'problema');
+      celdaProblema.appendChild(crear('strong', '', e.tipoTexto));
+      celdaProblema.appendChild(crear('span', '', e.descripcion));
+      tr.appendChild(celdaProblema);
+
+      tr.appendChild(crear('td', 'correccion', e.recomendacion));
+      cuerpo.appendChild(tr);
+    });
+    vaciar(el.tablaCuerpo);
+    el.tablaCuerpo.appendChild(cuerpo);
+    el.tablaConteo.textContent = visibles.length === r.errores.length
+      ? numero.format(r.errores.length) + (r.errores.length === 1 ? ' error' : ' errores') + ' en ' +
+        numero.format(r.filasConError) + (r.filasConError === 1 ? ' fila' : ' filas')
+      : 'Mostrando ' + numero.format(visibles.length) + ' de ' + numero.format(r.errores.length) + ' errores';
+  }
+
+  /* Eventos -------------------------------------------------------------- */
+  function enlazar() {
+    el.entrada.addEventListener('change', function () {
+      seleccionarArchivo(el.entrada.files);
+      el.entrada.value = '';
+    });
+
+    var profundidad = 0;
+    el.zona.addEventListener('dragenter', function (e) {
+      e.preventDefault();
+      if (ocupado()) return;
+      profundidad++;
+      el.zona.classList.add('arrastrando');
+    });
+    el.zona.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = ocupado() ? 'none' : 'copy';
+    });
+    el.zona.addEventListener('dragleave', function () {
+      profundidad = Math.max(0, profundidad - 1);
+      if (!profundidad) el.zona.classList.remove('arrastrando');
+    });
+    el.zona.addEventListener('drop', function (e) {
+      e.preventDefault();
+      profundidad = 0;
+      el.zona.classList.remove('arrastrando');
+      seleccionarArchivo(e.dataTransfer && e.dataTransfer.files);
+    });
+    // Evita que el navegador abra el archivo si se suelta fuera de la zona.
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) { e.preventDefault(); });
+
+    el.oficina.addEventListener('input', function () {
+      el.oficina.removeAttribute('aria-invalid');
+      errorEnCampo(el.oficinaError, '');
+      guardarPreferencia('premios.oficina', el.oficina.value.trim());
+    });
+
+    el.btnValidar.addEventListener('click', function () { validar(false); });
+    el.btnCambiar.addEventListener('click', abrirSelector);
+    el.btnQuitar.addEventListener('click', quitarArchivo);
+    el.btnPlantilla.addEventListener('click', descargarPlantilla);
+
+    el.btnDupContinuar.addEventListener('click', function () { validar(true); });
+    el.btnDupOtro.addEventListener('click', abrirSelector);
+
+    el.btnReintentar.addEventListener('click', reintentar);
+    el.btnErrorOtro.addEventListener('click', abrirSelector);
+
+    el.btnCorregida.addEventListener('click', abrirSelector);
+    el.btnRevalidar.addEventListener('click', function () { validar(false); });
+    el.btnDescargarReporte.addEventListener('click', descargarReporte);
+    el.fColumna.addEventListener('change', renderTabla);
+    el.fTipo.addEventListener('change', renderTabla);
+
+    el.btnOtro.addEventListener('click', reiniciar);
+
+    window.addEventListener('beforeunload', function (e) {
+      if (!ocupado()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    el.logo.addEventListener('error', function () {
+      el.logo.hidden = true;
+      el.logoTexto.hidden = false;
+    });
+  }
+
+  /* Inicio --------------------------------------------------------------- */
+  function iniciar() {
+    if (INICIAL.logo) {
+      el.logo.src = INICIAL.logo;
+      el.logo.hidden = false;
+    } else {
+      el.logoTexto.hidden = false;
+    }
+    if (INICIAL.correo) {
+      el.correoUsuario.textContent = INICIAL.correo;
+      el.correoUsuario.title = INICIAL.correo;
+      el.sesion.hidden = false;
+    }
+    var maximo = tamano(INICIAL.maxBytes);
+    el.zonaNota.textContent = 'Libro de Excel (.xlsx) · hasta ' + maximo;
+    el.reglaTamano.textContent = 'Hasta ' + maximo;
+    el.tituloObligatorios.textContent = 'Los ' + INICIAL.obligatorios.length + ' campos obligatorios';
+    INICIAL.obligatorios.forEach(function (nombre) {
+      el.listaObligatorios.appendChild(crear('li', '', nombre));
+    });
+    el.oficina.value = leerPreferencia('premios.oficina');
+
+    enlazar();
+    render();
+    llamar('apiRegistrarAcceso').catch(function () { /* la auditoría de acceso no bloquea la página */ });
+  }
+
+  iniciar();
+})();
+</script>
+</body>
+</html>
