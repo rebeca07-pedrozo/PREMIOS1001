@@ -8,6 +8,12 @@
  * Estructura de destino:  PREMIOS V2.0.0 / {AÑO} / {MES} /
  * El periodo lo define la columna MES del archivo cargado, no la fecha en que
  * se sube; el año se deduce de ese mes (ver periodoDelMes_).
+ *
+ * Los archivos pequeños llegan en la propia llamada y se crean con su
+ * contenido; los grandes se suben directamente a Drive desde el navegador, a la
+ * carpeta temporal, y al aprobarse solo se mueven a la carpeta del mes. En los
+ * dos casos guardarCarga_ hace lo mismo con la auditoría, el bloqueo y la
+ * verificación; lo único que cambia es la función «crear» que recibe.
  */
 
 const ESTADO_ALMACENAMIENTO = Object.freeze({
@@ -92,7 +98,7 @@ function guardarCarga_(datos) {
       const carpeta = conReintentos_(function () { return carpetaDelPeriodo_(periodo); });
       escribirCampos_(hoja, fila, { PERIODO: periodo.clave, CARPETA: periodo.ruta });
 
-      creado = carpeta.createFile(Utilities.newBlob(archivo.bytes, CONFIG.MIME_XLSX, archivo.nombre));
+      creado = datos.crear(carpeta);
       escribirCampos_(hoja, fila, { ID_ARCHIVO: creado.getId() });
       SpreadsheetApp.flush();
 
@@ -193,6 +199,175 @@ function obtenerOCrearCarpeta_(padre, nombre) {
     encontradas.sort(function (a, b) { return a.getDateCreated() - b.getDateCreated(); });
   }
   return encontradas[0];
+}
+
+/* ------------------------------------------------------------------------ */
+/* Archivos grandes: subida directa a Drive y conversión                     */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Llama a la API de Drive para lo que DriveApp no permite: abrir una sesión de
+ * subida reanudable, consultar la huella MD5 de un archivo y convertir un
+ * .xlsx en una hoja de Google.
+ */
+function driveApi_(metodo, ruta, cuerpo) {
+  const respuesta = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/' + ruta, {
+    method: metodo,
+    muteHttpExceptions: true,
+    contentType: 'application/json; charset=UTF-8',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: cuerpo ? JSON.stringify(cuerpo) : null
+  });
+  const codigo = respuesta.getResponseCode();
+  const texto = respuesta.getContentText();
+  if (codigo >= 200 && codigo < 300) return texto ? JSON.parse(texto) : {};
+  throw new ErrorApp('DRIVE_NO_DISPONIBLE',
+    'Google Drive no completó la operación (código ' + codigo + '). Intente de nuevo; si el problema continúa, ' +
+    'informe al administrador.', { detalle: metodo + ' ' + ruta + ' → ' + recortar_(texto, 400) });
+}
+
+/** Carpeta de cargas en proceso, dentro de la carpeta raíz. */
+function carpetaTemporal_() {
+  const raiz = DriveApp.getFolderById(propiedad_(CONFIG.PROPIEDADES.CARPETA_RAIZ, true));
+  return obtenerOCrearCarpeta_(raiz, CONFIG.CARPETA_TEMPORAL);
+}
+
+/**
+ * Abre una sesión de subida reanudable y devuelve su dirección. Esa dirección
+ * autoriza una sola cosa —subir ese archivo a la carpeta temporal— y no lleva
+ * credenciales, así que puede entregarse al navegador sin dar acceso al Drive.
+ */
+function crearSesionSubida_(nombre, tamano) {
+  const carpeta = carpetaTemporal_();
+  const respuesta = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+      method: 'post',
+      muteHttpExceptions: true,
+      contentType: 'application/json; charset=UTF-8',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'X-Upload-Content-Type': CONFIG.MIME_XLSX,
+        'X-Upload-Content-Length': String(tamano)
+      },
+      payload: JSON.stringify({ name: nombre, mimeType: CONFIG.MIME_XLSX, parents: [carpeta.getId()] })
+    });
+  if (respuesta.getResponseCode() !== 200) {
+    throw new ErrorApp('SUBIDA_NO_DISPONIBLE',
+      'No fue posible preparar la subida del archivo a Google Drive. Intente de nuevo; si el problema continúa, ' +
+      'informe al administrador.', { detalle: recortar_(respuesta.getContentText(), 400) });
+  }
+  const cabeceras = respuesta.getAllHeaders();
+  const uri = cabeceras.Location || cabeceras.location;
+  if (!uri) {
+    throw new ErrorApp('SUBIDA_NO_DISPONIBLE',
+      'Google Drive no entregó la dirección de subida. Intente de nuevo.',
+      { detalle: recortar_(JSON.stringify(cabeceras), 400) });
+  }
+  return String(uri);
+}
+
+/** Archivo recién subido, localizado por el nombre único de la carga. */
+function archivoTemporalPorNombre_(nombre) {
+  const iterador = carpetaTemporal_().getFilesByName(nombre);
+  while (iterador.hasNext()) {
+    const archivo = iterador.next();
+    if (!archivo.isTrashed()) return archivo;
+  }
+  return null;
+}
+
+/** Huella MD5 que calcula Drive: evita leer el archivo para detectar duplicados. */
+function md5De_(archivoId) {
+  const datos = driveApi_('get', 'files/' + archivoId + '?fields=md5Checksum&supportsAllDrives=true');
+  return String(datos.md5Checksum || '');
+}
+
+/**
+ * Convierte el .xlsx subido en una hoja de Google temporal. Es lo único que
+ * permite validar un archivo de decenas de MB: la conversión la hace Google y
+ * el script la lee por bloques de filas. El .xlsx original no se modifica.
+ */
+function convertirAHoja_(archivoId, nombre) {
+  const peticion = function () {
+    return driveApi_('post', 'files/' + archivoId + '/copy?supportsAllDrives=true&fields=id', {
+      name: recortar_(nombre, 180),
+      mimeType: MimeType.GOOGLE_SHEETS,
+      parents: [carpetaTemporal_().getId()]
+    });
+  };
+  let copia;
+  try {
+    copia = peticion();
+  } catch (primera) {
+    // La conversión de un archivo grande puede tardar y agotar la espera. Se
+    // intenta una segunda vez antes de darla por imposible; si la primera dejó
+    // una copia a medias, la limpieza de la carpeta temporal se encarga.
+    console.warn('La conversión falló en el primer intento: ' +
+      (primera && primera.message ? primera.message : primera));
+    Utilities.sleep(3000);
+    try {
+      copia = peticion();
+    } catch (e) {
+      throw new ErrorApp('ARCHIVO_NO_CONVERTIBLE',
+        'Google Drive no pudo preparar este archivo para validarlo. Pasa cuando el libro excede lo que una hoja ' +
+        'de cálculo admite (10 millones de celdas), cuando tiene hojas con millones de filas en blanco, o cuando ' +
+        'la preparación tarda más de lo que el servicio espera.', {
+          recomendacion: 'Intente de nuevo. Si vuelve a fallar, deje en el archivo una sola hoja, elimine las filas ' +
+            'y columnas en blanco que sobren y, si hace falta, divida la información en un archivo por mes u oficina.',
+          detalle: e instanceof ErrorApp ? e.detalle : String(e)
+        });
+    }
+  }
+  if (!copia.id) {
+    throw new ErrorApp('ARCHIVO_NO_CONVERTIBLE',
+      'Google Drive no devolvió la versión del archivo que se usa para validarlo. Intente de nuevo.', {
+        recomendacion: 'Vuelva a cargar el archivo. Si el problema continúa, informe al administrador.'
+      });
+  }
+  return copia.id;
+}
+
+/** Mueve a la carpeta del periodo el archivo original ya validado. */
+function moverArchivo_(archivoId, carpeta, nombre) {
+  const archivo = DriveApp.getFileById(archivoId);
+  archivo.setName(nombre);
+  archivo.moveTo(carpeta);
+  return archivo;
+}
+
+function descartarArchivo_(archivoId) {
+  if (!archivoId) return;
+  try {
+    DriveApp.getFileById(archivoId).setTrashed(true);
+  } catch (e) {
+    console.warn('No fue posible descartar el archivo temporal ' + archivoId + ': ' +
+      (e && e.message ? e.message : e));
+  }
+}
+
+/**
+ * Elimina lo que hayan dejado cargas abandonadas (el usuario cerró la página a
+ * mitad del proceso). Se ejecuta al iniciar una carga nueva, cuando la carpeta
+ * temporal está normalmente vacía, y nunca interrumpe la carga en curso.
+ */
+function limpiarTemporales_() {
+  try {
+    const limite = Date.now() - CONFIG.HORAS_TEMPORAL * 3600 * 1000;
+    const iterador = carpetaTemporal_().getFiles();
+    let eliminados = 0;
+    while (iterador.hasNext() && eliminados < 50) {
+      const archivo = iterador.next();
+      if (archivo.getLastUpdated().getTime() < limite) {
+        archivo.setTrashed(true);
+        eliminados++;
+      }
+    }
+    if (eliminados) {
+      console.log('Cargas abandonadas eliminadas de «' + CONFIG.CARPETA_TEMPORAL + '»: ' + eliminados);
+    }
+  } catch (e) {
+    console.warn('No fue posible limpiar la carpeta temporal: ' + (e && e.message ? e.message : e));
+  }
 }
 
 /* ------------------------------------------------------------------------ */

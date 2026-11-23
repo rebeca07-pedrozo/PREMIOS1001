@@ -213,6 +213,10 @@
     animation: avanzar 1.25s cubic-bezier(.65, 0, .35, 1) infinite;
   }
   @keyframes avanzar { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  /* Con progreso conocido (subida y validación por lotes) la barra avanza. */
+  .progreso__barra[data-determinada="si"] span {
+    width: var(--avance, 0%); animation: none; transition: width .3s ease-out;
+  }
   .etapas { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; font-size: .8125rem; color: var(--texto-2); }
   .etapas li { display: flex; align-items: center; gap: 8px; }
   .etapas li::before {
@@ -453,7 +457,7 @@
         <span class="zona__icono" aria-hidden="true"><svg class="icono"><use href="#i-subir"/></svg></span>
         <span class="zona__titulo">Arrastre aquí su archivo .xlsx</span>
         <span class="zona__texto">o <span class="zona__enlace">selecciónelo desde su equipo</span></span>
-        <span id="zona-nota" class="zona__nota">Libro de Excel (.xlsx) · hasta 25 MB</span>
+        <span id="zona-nota" class="zona__nota">Libro de Excel (.xlsx) · hasta 40 MB</span>
       </label>
 
       <div id="archivo" class="archivo" hidden>
@@ -481,7 +485,7 @@
           <span id="progreso-tiempo" class="progreso__tiempo"></span>
         </div>
         <p id="progreso-detalle" class="progreso__detalle" hidden></p>
-        <div class="progreso__barra" aria-hidden="true"><span></span></div>
+        <div id="progreso-barra" class="progreso__barra" aria-hidden="true"><span></span></div>
         <ol class="etapas">
           <li id="etapa-validar">Validación</li>
           <li id="etapa-guardar">Guardado en Google Drive</li>
@@ -515,9 +519,11 @@
         <h2>Archivo permitido</h2>
         <ul class="lista-simple">
           <li>Libro de Excel (.xlsx)</li>
-          <li id="regla-tamano">Hasta 25 MB</li>
+          <li id="regla-tamano">Hasta 40 MB</li>
           <li>Un archivo por carga</li>
           <li>Un solo mes por archivo, según la columna MES</li>
+          <li>Los archivos de más de 5 MB se suben directamente a Google Drive y se validan por lotes: puede
+            tardar algunos minutos, no cierre la página</li>
           <li>Encabezados iguales a los de la plantilla oficial</li>
         </ul>
       </section>
@@ -660,12 +666,18 @@
   var INICIAL = <?!= jsonSeguro_(inicial) ?>;
 
   /* Estado --------------------------------------------------------------- */
-  var FASES_OCUPADAS = ['leyendo', 'validando', 'valido', 'almacenando'];
+  var FASES_OCUPADAS = ['leyendo', 'subiendo', 'validando', 'valido', 'almacenando'];
   var CODIGOS_REVALIDAR = ['VALIDACION_VENCIDA', 'ARCHIVO_MODIFICADO', 'VALIDACION_REQUERIDA'];
+  // Errores que obligan a subir el archivo grande otra vez.
+  var CODIGOS_RESUBIR = ['CARGA_VENCIDA', 'CARGA_DESCONOCIDA', 'SUBIDA_INCOMPLETA', 'CARGA_YA_VALIDADA',
+    'SUBIDA_FALLIDA', 'SUBIDA_NO_DISPONIBLE'];
   var estado = {
     fase: 'inicial',
     archivo: null,
     base64: null,
+    grande: false,
+    cargaId: null,
+    progreso: null,
     oficinaValidada: '',
     token: null,
     confirmarDuplicado: false,
@@ -687,7 +699,8 @@
     'logo', 'logo-texto', 'sesion', 'correo-usuario', 'oficina', 'oficina-error', 'zona', 'zona-nota', 'entrada',
     'archivo', 'archivo-nombre', 'archivo-meta', 'btn-cambiar', 'btn-quitar', 'archivo-error', 'acciones-carga',
     'btn-validar', 'progreso', 'progreso-texto', 'progreso-tiempo', 'progreso-detalle', 'etapa-validar',
-    'etapa-guardar', 'btn-plantilla', 'plantilla-error', 'regla-tamano', 'titulo-obligatorios', 'lista-obligatorios',
+    'etapa-guardar', 'progreso-barra', 'btn-plantilla', 'plantilla-error', 'regla-tamano',
+    'titulo-obligatorios', 'lista-obligatorios',
     'panel-duplicado', 'dup-titulo', 'dup-texto', 'dup-datos', 'btn-dup-continuar', 'btn-dup-otro',
     'panel-error', 'error-titulo', 'error-texto', 'error-ref', 'btn-reintentar', 'btn-reintentar-texto', 'btn-error-otro',
     'panel-exito', 'exito-titulo', 'exito-repetido', 'exito-datos', 'exito-advertencias', 'exito-lista-advertencias', 'btn-otro',
@@ -871,7 +884,9 @@
       return;
     }
     errorEnCampo(el.archivoError, '');
+    cancelarCargaPendiente();
     estado.archivo = archivo;
+    estado.grande = archivo.size > (INICIAL.umbralDirecto || 0);
     estado.base64 = null;
     estado.token = null;
     estado.confirmarDuplicado = false;
@@ -887,7 +902,9 @@
 
   function quitarArchivo() {
     if (ocupado()) return;
+    cancelarCargaPendiente();
     estado.archivo = null;
+    estado.grande = false;
     estado.base64 = null;
     estado.token = null;
     estado.duplicado = null;
@@ -908,7 +925,12 @@
 
   function cambiarFase(fase) {
     estado.fase = fase;
-    if (ocupado()) iniciarReloj(); else detenerReloj();
+    if (ocupado()) {
+      iniciarReloj();
+    } else {
+      detenerReloj();
+      estado.progreso = null;
+    }
     render();
   }
 
@@ -930,6 +952,10 @@
     estado.reporteVigente = false;
     estado.token = null;
     estado.error = null;
+    if (estado.grande) {
+      validarArchivoGrande(oficina, !!confirmarDuplicado);
+      return;
+    }
     cambiarFase('leyendo');
 
     leerComoBase64(estado.archivo).then(function (base64) {
@@ -954,7 +980,136 @@
     });
   }
 
+  /* Archivos grandes -----------------------------------------------------
+   * No caben en una llamada al servidor: el servidor abre una sesión de subida
+   * de Google Drive y el archivo viaja por partes directamente a Drive. Después
+   * la validación avanza por lotes, con una llamada por lote. */
+  function validarArchivoGrande(oficina, confirmarDuplicado) {
+    estado.progreso = null;
+    var yaSubido = !!estado.cargaId;
+    var preparado = yaSubido ? Promise.resolve() : iniciarYSubir(oficina);
+    cambiarFase(yaSubido ? 'validando' : 'subiendo');
+    preparado.then(function () {
+      cambiarFase('validando');
+      return validarPorLotes(confirmarDuplicado);
+    }).then(procesarRespuesta).catch(function (error) {
+      estado.error = errorLegible(error);
+      cambiarFase('errorValidacion');
+      enfocar(el.errorTitulo);
+    });
+  }
+
+  function iniciarYSubir(oficina) {
+    return llamar('apiIniciarCarga', {
+      nombre: estado.archivo.name,
+      tamano: estado.archivo.size,
+      oficina: oficina
+    }).then(function (r) {
+      estado.cargaId = r.cargaId;
+      return subirPorPartes(r.uri, estado.archivo, r.bytesPorParte || 8388608).catch(function (error) {
+        // Una subida a medias no sirve: la siguiente vez se empieza de nuevo.
+        cancelarCargaPendiente();
+        throw error;
+      });
+    });
+  }
+
+  /**
+   * Sube el archivo por partes a la dirección que entregó el servidor. Drive
+   * exige que todas las partes, menos la última, midan un múltiplo de 256 KB.
+   */
+  function subirPorPartes(uri, archivo, tamanoParte) {
+    var total = archivo.size;
+    var desde = 0;
+    var reintentos = 0;
+
+    function fallo(detalle) {
+      return {
+        codigo: 'SUBIDA_FALLIDA',
+        mensaje: 'La subida del archivo a Google Drive se interrumpió' + (detalle ? ' (' + detalle + ')' : '') +
+          '. Revise su conexión a internet e intente de nuevo; no se guardó nada.'
+      };
+    }
+
+    function siguiente() {
+      if (desde >= total) return Promise.resolve();
+      var hasta = Math.min(desde + tamanoParte, total);
+      return fetch(uri, {
+        method: 'PUT',
+        headers: { 'Content-Range': 'bytes ' + desde + '-' + (hasta - 1) + '/' + total },
+        body: archivo.slice(desde, hasta)
+      }).then(function (respuesta) {
+        if (respuesta.status === 308 || respuesta.status === 200 || respuesta.status === 201) {
+          desde = hasta;
+          reintentos = 0;
+          mostrarProgreso('Subiendo el archivo a Google Drive… ' + Math.round(desde * 100 / total) + '%',
+            desde * 100 / total);
+          return siguiente();
+        }
+        if (respuesta.status >= 500 && reintentos < 2) {
+          reintentos++;
+          return siguiente();
+        }
+        throw fallo('código ' + respuesta.status);
+      }, function () {
+        if (reintentos < 2) {
+          reintentos++;
+          return siguiente();
+        }
+        throw fallo('');
+      });
+    }
+
+    return siguiente();
+  }
+
+  /** Una llamada por lote hasta que el servidor entrega un resultado. */
+  function validarPorLotes(confirmarDuplicado) {
+    return llamar('apiValidarGrande', {
+      cargaId: estado.cargaId,
+      confirmarDuplicado: !!confirmarDuplicado
+    }).then(function (r) {
+      if (r.estado !== 'EN_PROCESO') return r;
+      mostrarProgreso((r.progreso && r.progreso.texto) || 'Validando los registros…',
+        r.progreso && r.progreso.porcentaje);
+      return validarPorLotes(confirmarDuplicado);
+    });
+  }
+
+  function mostrarProgreso(texto, porcentaje) {
+    estado.progreso = {
+      texto: texto,
+      porcentaje: typeof porcentaje === 'number' && isFinite(porcentaje) ? Math.round(porcentaje) : null
+    };
+    render();
+  }
+
+  /** Avisa al servidor que la carga quedó abandonada, para que no deje basura. */
+  function cancelarCargaPendiente() {
+    if (!estado.cargaId) return;
+    var cargaId = estado.cargaId;
+    estado.cargaId = null;
+    llamar('apiCancelarCarga', { cargaId: cargaId }).catch(function () {
+      // La carpeta temporal se limpia sola; no hay nada que informar al usuario.
+    });
+  }
+
   function almacenar() {
+    if (estado.grande) {
+      if (!estado.cargaId) {
+        validar(estado.confirmarDuplicado);
+        return;
+      }
+      cambiarFase('almacenando');
+      llamar('apiAlmacenarGrande', { cargaId: estado.cargaId })
+        .then(procesarRespuesta)
+        .catch(function (error) {
+          estado.error = errorLegible(error);
+          cambiarFase('errorAlmacenamiento');
+          enfocar(el.errorTitulo);
+        });
+      return;
+    }
     if (!estado.token || !estado.base64) {
       validar(estado.confirmarDuplicado);
       return;
@@ -996,6 +1151,8 @@
       estado.reporteVigente = true;
       estado.token = null;
       estado.base64 = null;
+      // El servidor ya eliminó el archivo subido y su conversión.
+      estado.cargaId = null;
       renderReporte();
       cambiarFase('rechazado');
       anunciar('Archivo rechazado: ' + numero.format(r.reporte.totalErrores) + ' errores. Revise el reporte.');
@@ -1011,6 +1168,7 @@
       estado.resultado = r.almacenamiento;
       estado.base64 = null;
       estado.token = null;
+      estado.cargaId = null;
       renderExito();
       cambiarFase('completado');
       anunciar('Carga completada. Folio ' + r.almacenamiento.folio + '.');
@@ -1020,12 +1178,16 @@
 
   function reintentar() {
     var codigo = estado.error && estado.error.codigo;
-    if (estado.fase === 'errorAlmacenamiento' && CODIGOS_REVALIDAR.indexOf(codigo) === -1) almacenar();
+    var resubir = CODIGOS_RESUBIR.indexOf(codigo) !== -1;
+    if (resubir) estado.cargaId = null;
+    if (estado.fase === 'errorAlmacenamiento' && !resubir && CODIGOS_REVALIDAR.indexOf(codigo) === -1) almacenar();
     else validar(estado.confirmarDuplicado);
   }
 
   function reiniciar() {
+    cancelarCargaPendiente();
     estado.archivo = null;
+    estado.grande = false;
     estado.base64 = null;
     estado.token = null;
     estado.reporte = null;
@@ -1107,9 +1269,18 @@
 
     el.progreso.hidden = !trabajando;
     var guardando = f === 'valido' || f === 'almacenando';
+    var avance = estado.progreso;
     el.progresoTexto.textContent = f === 'leyendo' ? 'Leyendo el archivo en su equipo…'
-      : f === 'validando' ? 'Validando estructura y registros…'
+      : f === 'subiendo' ? ((avance && avance.texto) || 'Subiendo el archivo a Google Drive…')
+      : f === 'validando' ? ((avance && avance.texto) || 'Validando estructura y registros…')
       : 'Guardando en Google Drive…';
+    if (trabajando && avance && avance.porcentaje !== null && avance.porcentaje !== undefined) {
+      el.progresoBarra.dataset.determinada = 'si';
+      el.progresoBarra.style.setProperty('--avance', Math.max(2, Math.min(100, avance.porcentaje)) + '%');
+    } else {
+      delete el.progresoBarra.dataset.determinada;
+      el.progresoBarra.style.removeProperty('--avance');
+    }
     el.progresoDetalle.hidden = !guardando || !estado.validacion;
     if (guardando && estado.validacion) {
       el.progresoDetalle.textContent = 'Validación superada: ' + numero.format(estado.validacion.registrosRevisados) +

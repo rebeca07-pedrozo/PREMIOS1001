@@ -4,8 +4,16 @@
  * Esquema oficial de la plantilla, lectura del archivo .xlsx, reglas de
  * validación por registro y reporte de inconsistencias (en pantalla y Excel).
  *
- * El .xlsx se lee directamente desde su contenido (Utilities.unzip): no se
- * convierte a Google Sheets ni se crea ningún archivo temporal en Drive.
+ * Hay dos caminos de lectura, con las mismas reglas de negocio:
+ *
+ *   · Archivos hasta CONFIG.MAX_BYTES_MEMORIA: se leen directamente desde su
+ *     contenido (Utilities.unzip), tal como están guardados. Es el camino fiel
+ *     al original y no crea nada en Drive.
+ *   · Archivos más grandes: Apps Script no puede sostener la hoja
+ *     descomprimida en memoria (cerca de 1 KB por registro), así que se valida
+ *     por lotes sobre la conversión del archivo a una hoja de Google
+ *     (validarHojaPorLotes_). El archivo que se guarda sigue siendo el .xlsx
+ *     original; la conversión es temporal y se elimina.
  */
 
 /* ------------------------------------------------------------------------ */
@@ -83,6 +91,7 @@ const TIPOS_ERROR = Object.freeze({
   ENCABEZADO_DIFERENTE: 'Encabezado diferente',
   ENCABEZADO_DUPLICADO: 'Encabezado duplicado',
   SIN_REGISTROS: 'Archivo sin registros',
+  HOJA_NO_LEGIBLE: 'Hoja no legible',
   MESES_MEZCLADOS: 'Varios meses en un mismo archivo',
   DEMASIADAS_FILAS: 'Demasiados registros',
   // Registros
@@ -127,35 +136,8 @@ function validarLibro_(bytes, nombreArchivo) {
     return cerrarReporte_(reporte);
   }
 
-  const mejor = candidatos[0];
-  const totalObligatorios = ESQUEMA.filter(function (c) { return c.obligatorio; }).length;
-
-  if (!mejor || mejor.coincidencias < CONFIG.MIN_COINCIDENCIAS_ESTRUCTURA) {
-    const hojas = libro.hojas.map(function (h) { return '«' + h.nombre + '»'; }).join(', ');
-    agregarErrorEstructura_(reporte, {
-      tipo: 'ESTRUCTURA_NO_RECONOCIDA',
-      descripcion: 'No se encontraron los encabezados de la plantilla oficial en las primeras ' +
-        CONFIG.FILAS_BUSQUEDA_ENCABEZADO + ' filas de ' + (hojas || 'ninguna hoja') + '.' +
-        (mejor ? ' La mayor coincidencia fue la fila ' + mejor.numero + ' de la hoja «' + mejor.hoja.nombre +
-          '», con ' + mejor.coincidencias + ' de ' + ESQUEMA.length + ' encabezados.' : ''),
-      recomendacion: 'Descargue la plantilla oficial desde esta página y copie sus datos debajo de los ' +
-        'encabezados, sin cambiarlos.'
-    });
-    return cerrarReporte_(reporte);
-  }
-
-  const completos = candidatos.filter(function (c) { return c.obligatorias === totalObligatorios; });
-  if (completos.length > 1) {
-    agregarErrorEstructura_(reporte, {
-      tipo: 'HOJAS_AMBIGUAS',
-      descripcion: 'Las hojas ' + completos.map(function (c) { return '«' + c.hoja.nombre + '»'; }).join(' y ') +
-        ' tienen la estructura de la plantilla, y no es posible saber cuál contiene la información a cargar.',
-      recomendacion: 'Deje en el archivo una sola hoja con la plantilla diligenciada y elimine las demás.'
-    });
-    return cerrarReporte_(reporte);
-  }
-
-  const elegido = completos[0] || mejor;
+  const elegido = elegirEncabezado_(candidatos, libro.hojas.map(function (h) { return h.nombre; }), reporte);
+  if (!elegido) return cerrarReporte_(reporte);
   reporte.hoja = elegido.hoja.nombre;
   reporte.filaEncabezado = elegido.numero;
 
@@ -168,24 +150,68 @@ function validarLibro_(bytes, nombreArchivo) {
 /* Estructura                                                                */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Decide con qué fila de encabezados se trabaja. Deja en el reporte el error
+ * correspondiente y devuelve null cuando no hay una estructura reconocible o
+ * cuando dos hojas tienen la plantilla completa. La usan los dos caminos de
+ * lectura (memoria y hoja convertida).
+ */
+function elegirEncabezado_(candidatos, nombresHojas, reporte) {
+  const mejor = candidatos[0];
+  const totalObligatorios = ESQUEMA.filter(function (c) { return c.obligatorio; }).length;
+
+  if (!mejor || mejor.coincidencias < CONFIG.MIN_COINCIDENCIAS_ESTRUCTURA) {
+    const hojas = nombresHojas.map(function (n) { return '«' + n + '»'; }).join(', ');
+    agregarErrorEstructura_(reporte, {
+      tipo: 'ESTRUCTURA_NO_RECONOCIDA',
+      descripcion: 'No se encontraron los encabezados de la plantilla oficial en las primeras ' +
+        CONFIG.FILAS_BUSQUEDA_ENCABEZADO + ' filas de ' + (hojas || 'ninguna hoja') + '.' +
+        (mejor ? ' La mayor coincidencia fue la fila ' + mejor.numero + ' de la hoja «' + mejor.hoja.nombre +
+          '», con ' + mejor.coincidencias + ' de ' + ESQUEMA.length + ' encabezados.' : ''),
+      recomendacion: 'Descargue la plantilla oficial desde esta página y copie sus datos debajo de los ' +
+        'encabezados, sin cambiarlos.'
+    });
+    return null;
+  }
+
+  const completos = candidatos.filter(function (c) { return c.obligatorias === totalObligatorios; });
+  if (completos.length > 1) {
+    agregarErrorEstructura_(reporte, {
+      tipo: 'HOJAS_AMBIGUAS',
+      descripcion: 'Las hojas ' + completos.map(function (c) { return '«' + c.hoja.nombre + '»'; }).join(' y ') +
+        ' tienen la estructura de la plantilla, y no es posible saber cuál contiene la información a cargar.',
+      recomendacion: 'Deje en el archivo una sola hoja con la plantilla diligenciada y elimine las demás.'
+    });
+    return null;
+  }
+  return completos[0] || mejor;
+}
+
+/** Cuántos encabezados del esquema reconoce una fila. */
+function puntuarEncabezados_(celdas) {
+  const indice = indiceEsquema_();
+  const claves = {};
+  Object.keys(celdas).forEach(function (i) {
+    const col = indice[normalizarEncabezado_(celdas[i].texto)];
+    if (col) claves[col.clave] = true;
+  });
+  return {
+    coincidencias: Object.keys(claves).length,
+    obligatorias: ESQUEMA.filter(function (c) { return c.obligatorio && claves[c.clave]; }).length
+  };
+}
+
 /** Busca, en cada hoja, la fila que más se parece al encabezado oficial. */
 function detectarEncabezados_(libro) {
-  const indice = indiceEsquema_();
   const candidatos = [];
   libro.hojas.forEach(function (hoja) {
     hoja.xml = libro.leer(hoja.ruta);
     if (!hoja.xml) return;
     let mejor = null;
     recorrerFilas_(libro, hoja.xml, 1, CONFIG.FILAS_BUSQUEDA_ENCABEZADO, function (numero, celdas) {
-      const claves = {};
-      Object.keys(celdas).forEach(function (i) {
-        const col = indice[normalizarEncabezado_(celdas[i].texto)];
-        if (col) claves[col.clave] = true;
-      });
-      const coincidencias = Object.keys(claves).length;
-      const obligatorias = ESQUEMA.filter(function (c) { return c.obligatorio && claves[c.clave]; }).length;
-      if (!mejor || coincidencias > mejor.coincidencias) {
-        mejor = { hoja: hoja, numero: numero, celdas: celdas, coincidencias: coincidencias, obligatorias: obligatorias };
+      const puntaje = puntuarEncabezados_(celdas);
+      if (!mejor || puntaje.coincidencias > mejor.coincidencias) {
+        mejor = Object.assign({ hoja: hoja, numero: numero, celdas: celdas }, puntaje);
       }
     });
     if (mejor) candidatos.push(mejor);
@@ -273,51 +299,81 @@ function analizarEncabezados_(elegido, reporte) {
 /* ------------------------------------------------------------------------ */
 
 function validarRegistros_(libro, elegido, columnas, reporte) {
-  const anioActual = Number(formatearFecha_(new Date(), 'yyyy'));
-  const contexto = { anios: [anioActual, anioActual - 1] };
-  const filasConError = {};
-  const columnaMes = columnas.filter(function (c) { return c.col.clave === 'mes'; })[0] || null;
-  const meses = {};
-  let registros = 0;
-  let excedido = false;
+  const acumulado = nuevoAcumulado_(columnas, CONFIG.MAX_FILAS);
 
   recorrerFilas_(libro, elegido.hoja.xml, elegido.numero + 1, 0, function (numero, celdas) {
-    const tieneInformacion = columnas.some(function (c) { return !esVacia_(celdas[c.indice]); });
-    if (!tieneInformacion) return true;
-    registros++;
-    if (registros > CONFIG.MAX_FILAS) {
-      excedido = true;
-      return false;
-    }
-    columnas.forEach(function (c) {
-      if (!c.col.obligatorio) return;
-      const celda = celdas[c.indice] || CELDA_VACIA_;
-      const hallazgo = evaluarCelda_(c.col, celda, contexto);
-      if (!hallazgo) return;
-      filasConError[numero] = true;
-      agregarErrorRegistro_(reporte, Object.assign({
-        fila: numero,
-        letra: c.letra,
-        columna: c.col.etiqueta,
-        valor: recortar_(celda.texto, 200)
-      }, hallazgo));
-    });
-    if (columnaMes) acumularMes_(meses, celdas[columnaMes.indice], numero);
-    return true;
+    return evaluarRegistro_(reporte, columnas, celdas, numero, acumulado);
   });
 
-  reporte.registrosRevisados = Math.min(registros, CONFIG.MAX_FILAS);
-  reporte.filasConError = Object.keys(filasConError).length;
+  cerrarRegistros_(reporte, acumulado);
+}
 
-  if (excedido) {
+/**
+ * Estado que se acumula mientras se recorren los registros. Es el mismo para
+ * los dos caminos de lectura y, en el de archivos grandes, viaja serializado
+ * entre una llamada y la siguiente: por eso no guarda referencias ni mapas que
+ * puedan crecer con la cantidad de filas.
+ */
+function nuevoAcumulado_(columnas, maximo) {
+  const anioActual = Number(formatearFecha_(new Date(), 'yyyy'));
+  return {
+    contexto: { anios: [anioActual, anioActual - 1] },
+    columnaMes: columnas.filter(function (c) { return c.col.clave === 'mes'; })[0] || null,
+    meses: {},
+    registros: 0,
+    filasConError: 0,
+    ultimaFilaConError: 0,
+    maximo: maximo,
+    excedido: false
+  };
+}
+
+/**
+ * Evalúa un registro y acumula sus hallazgos. Devuelve false cuando ya no hay
+ * que seguir recorriendo (se alcanzó el máximo de registros validables).
+ */
+function evaluarRegistro_(reporte, columnas, celdas, numero, acumulado) {
+  const tieneInformacion = columnas.some(function (c) { return !esVacia_(celdas[c.indice]); });
+  if (!tieneInformacion) return true;
+  if (acumulado.registros >= acumulado.maximo) {
+    acumulado.excedido = true;
+    return false;
+  }
+  acumulado.registros++;
+  columnas.forEach(function (c) {
+    if (!c.col.obligatorio) return;
+    const celda = celdas[c.indice] || CELDA_VACIA_;
+    const hallazgo = evaluarCelda_(c.col, celda, acumulado.contexto);
+    if (!hallazgo) return;
+    if (acumulado.ultimaFilaConError !== numero) {
+      acumulado.filasConError++;
+      acumulado.ultimaFilaConError = numero;
+    }
+    agregarErrorRegistro_(reporte, Object.assign({
+      fila: numero,
+      letra: c.letra,
+      columna: c.col.etiqueta,
+      valor: recortar_(celda.texto, 200)
+    }, hallazgo));
+  });
+  if (acumulado.columnaMes) acumularMes_(acumulado.meses, celdas[acumulado.columnaMes.indice], numero);
+  return true;
+}
+
+/** Cierra el recuento de registros: totales, límites y periodo detectado. */
+function cerrarRegistros_(reporte, acumulado) {
+  reporte.registrosRevisados = acumulado.registros;
+  reporte.filasConError = acumulado.filasConError;
+
+  if (acumulado.excedido) {
     agregarErrorEstructura_(reporte, {
       tipo: 'DEMASIADAS_FILAS',
-      descripcion: 'El archivo tiene más de ' + numeroTexto_(CONFIG.MAX_FILAS) +
+      descripcion: 'El archivo tiene más de ' + numeroTexto_(acumulado.maximo) +
         ' registros, el máximo que se puede validar en una sola carga.',
       recomendacion: 'Divida la información en varios archivos —uno por mes y, si hace falta, uno por oficina— y ' +
         'cárguelos por separado.'
     });
-  } else if (registros === 0) {
+  } else if (acumulado.registros === 0) {
     agregarErrorEstructura_(reporte, {
       tipo: 'SIN_REGISTROS', fila: reporte.filaEncabezado,
       descripcion: 'La hoja «' + reporte.hoja + '» tiene los encabezados, pero no hay registros debajo de la fila ' +
@@ -326,7 +382,7 @@ function validarRegistros_(libro, elegido, columnas, reporte) {
     });
   }
 
-  determinarPeriodo_(reporte, meses, columnaMes);
+  determinarPeriodo_(reporte, acumulado.meses, acumulado.columnaMes || null);
 }
 
 /** Cuenta los meses válidos encontrados en la columna MES. */
@@ -352,6 +408,7 @@ function mesDeCelda_(celda) {
  * ninguna carpeta representa su contenido.
  */
 function determinarPeriodo_(reporte, meses, columnaMes) {
+  const letraMes = columnaMes ? columnaMes.letra : '';
   const detectados = Object.keys(meses).map(function (k) { return meses[k]; })
     .sort(function (a, b) { return a.mes - b.mes; });
   if (!detectados.length) return;
@@ -361,7 +418,7 @@ function determinarPeriodo_(reporte, meses, columnaMes) {
   }
   agregarErrorEstructura_(reporte, {
     tipo: 'MESES_MEZCLADOS',
-    letra: columnaMes ? columnaMes.letra : '',
+    letra: letraMes,
     columna: 'MES',
     descripcion: 'La columna MES tiene ' + detectados.length + ' meses distintos en el mismo archivo: ' +
       unirLista_(detectados.map(function (d) {
@@ -511,10 +568,192 @@ const REGLAS_ = Object.freeze({
 });
 
 /* ------------------------------------------------------------------------ */
+/* Validación por lotes: archivos grandes                                    */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Valida la hoja de Google a la que se convirtió un archivo grande, leyéndola
+ * por bloques de filas y aplicando exactamente las mismas reglas que el camino
+ * en memoria.
+ *
+ * Es continuable: cuando se agota el presupuesto de tiempo de la llamada
+ * devuelve {terminado:false, avance}, y la llamada siguiente retoma en la fila
+ * donde quedó. El avance viaja serializado en la caché del script, así que solo
+ * contiene datos planos.
+ *
+ * @param {string} hojaId  Hoja de Google temporal (conversión del .xlsx).
+ * @param {Object} avance  Estado devuelto por la llamada anterior, o null.
+ * @return {{terminado:boolean, avance:Object, reporte:Object, progreso:Object}}
+ */
+function validarHojaPorLotes_(hojaId, avance, nombreArchivo, presupuestoMs) {
+  const inicio = Date.now();
+  const presupuesto = presupuestoMs || CONFIG.MS_PRESUPUESTO_LOTE;
+  const estado = avance || prepararHojaGrande_(hojaId, nombreArchivo);
+  if (estado.cerrado) return { terminado: true, avance: estado, reporte: estado.reporte };
+
+  if (!estado.detenido) {
+    const hoja = SpreadsheetApp.openById(hojaId).getSheetByName(estado.hoja);
+    if (!hoja) {
+      agregarErrorEstructura_(estado.reporte, {
+        tipo: 'HOJA_NO_LEGIBLE',
+        descripcion: 'La hoja «' + estado.hoja + '» dejó de estar disponible mientras se validaba el archivo.',
+        recomendacion: 'Vuelva a cargar el archivo. Si el problema continúa, informe al administrador.'
+      });
+      estado.detenido = true;
+    } else {
+      const columnas = columnasDesdeEstado_(estado.columnas);
+      const acumulado = rehidratarAcumulado_(estado.acumulado, columnas);
+      // La comprobación de tiempo va al final del bloque: así cada llamada
+      // avanza al menos un bloque y la validación no se queda en el sitio.
+      while (estado.fila <= estado.ultimaFila && !acumulado.excedido) {
+        const cantidad = Math.min(CONFIG.FILAS_POR_BLOQUE, estado.ultimaFila - estado.fila + 1);
+        const valores = hoja.getRange(estado.fila, 1, cantidad, estado.ultimaColumna).getValues();
+        let leidas = 0;
+        for (let i = 0; i < cantidad; i++) {
+          leidas++;
+          if (!evaluarRegistro_(estado.reporte, columnas, celdasDeFila_(valores[i], columnas),
+            estado.fila + i, acumulado)) break;
+        }
+        estado.fila += leidas;
+        if (Date.now() - inicio >= presupuesto) break;
+      }
+      estado.acumulado = deshidratarAcumulado_(acumulado);
+      if (estado.fila > estado.ultimaFila || acumulado.excedido) {
+        cerrarRegistros_(estado.reporte, acumulado);
+        estado.detenido = true;
+      } else {
+        return { terminado: false, avance: estado, reporte: null, progreso: progresoHoja_(estado) };
+      }
+    }
+  }
+
+  estado.reporte = cerrarReporte_(estado.reporte);
+  estado.cerrado = true;
+  return { terminado: true, avance: estado, reporte: estado.reporte, progreso: progresoHoja_(estado) };
+}
+
+/**
+ * Primera llamada de la validación por lotes: elige la hoja y la fila de
+ * encabezados, analiza las columnas y deja listo el avance. Si la estructura no
+ * sirve, el reporte ya queda con el error y el avance marcado como detenido.
+ */
+function prepararHojaGrande_(hojaId, nombreArchivo) {
+  const libro = SpreadsheetApp.openById(hojaId);
+  const reporte = nuevoReporte_(nombreArchivo, CONFIG.MAX_ERRORES_DETALLE_GRANDE);
+  const estado = {
+    reporte: reporte, hoja: '', columnas: [], fila: 0, ultimaFila: 0, ultimaColumna: 1,
+    acumulado: null, detenido: true, cerrado: false
+  };
+
+  const hojas = libro.getSheets();
+  const candidatos = [];
+  hojas.forEach(function (hoja) {
+    const filas = Math.min(CONFIG.FILAS_BUSQUEDA_ENCABEZADO, hoja.getLastRow());
+    const columnas = Math.min(hoja.getLastColumn(), CONFIG.MAX_COLUMNAS_LECTURA);
+    if (filas < 1 || columnas < 1) return;
+    let mejor = null;
+    hoja.getRange(1, 1, filas, columnas).getValues().forEach(function (valores, i) {
+      const celdas = {};
+      valores.forEach(function (valor, j) { celdas[j] = celdaDeValor_(valor); });
+      const puntaje = puntuarEncabezados_(celdas);
+      if (!mejor || puntaje.coincidencias > mejor.coincidencias) {
+        mejor = Object.assign({ hoja: { nombre: hoja.getName() }, numero: i + 1, celdas: celdas }, puntaje);
+      }
+    });
+    if (mejor) candidatos.push(mejor);
+  });
+  candidatos.sort(function (a, b) { return b.coincidencias - a.coincidencias; });
+
+  const elegido = elegirEncabezado_(candidatos, hojas.map(function (h) { return h.getName(); }), reporte);
+  if (!elegido) return estado;
+
+  reporte.hoja = elegido.hoja.nombre;
+  reporte.filaEncabezado = elegido.numero;
+  const columnas = analizarEncabezados_(elegido, reporte);
+  const hoja = libro.getSheetByName(elegido.hoja.nombre);
+
+  estado.hoja = elegido.hoja.nombre;
+  estado.columnas = columnas.map(function (c) {
+    return { clave: c.col.clave, indice: c.indice, letra: c.letra };
+  });
+  estado.fila = elegido.numero + 1;
+  estado.ultimaColumna = columnas.reduce(function (maximo, c) { return Math.max(maximo, c.indice + 1); }, 1);
+
+  // Excel suele dejar formato en filas vacías y al convertirse se vuelven filas
+  // de la hoja, así que getLastRow() puede quedar muy por encima del último
+  // registro real. Por eso el tope de registros lo decide el recuento de
+  // registros con información (no la última fila) y aquí solo se limita el
+  // recorrido a lo que puede contener una hoja de Excel.
+  estado.ultimaFila = Math.min(hoja.getLastRow(), estado.fila - 1 + CONFIG.MAX_FILAS_ESCANEO);
+  estado.acumulado = deshidratarAcumulado_(nuevoAcumulado_(columnas, CONFIG.MAX_FILAS_GRANDE));
+  estado.detenido = false;
+  return estado;
+}
+
+/** Columnas reconocidas, reconstruidas desde el avance serializado. */
+function columnasDesdeEstado_(lista) {
+  const porClave = {};
+  ESQUEMA.forEach(function (col) { porClave[col.clave] = col; });
+  return lista.map(function (c) { return { col: porClave[c.clave], indice: c.indice, letra: c.letra }; });
+}
+
+function rehidratarAcumulado_(plano, columnas) {
+  const acumulado = Object.assign(nuevoAcumulado_(columnas, plano.maximo), plano);
+  acumulado.columnaMes = columnas.filter(function (c) { return c.col.clave === 'mes'; })[0] || null;
+  return acumulado;
+}
+
+function deshidratarAcumulado_(acumulado) {
+  const plano = Object.assign({}, acumulado);
+  delete plano.columnaMes;
+  return plano;
+}
+
+/** Solo se leen las columnas reconocidas: las demás no se validan. */
+function celdasDeFila_(valores, columnas) {
+  const celdas = {};
+  columnas.forEach(function (c) { celdas[c.indice] = celdaDeValor_(valores[c.indice]); });
+  return celdas;
+}
+
+const ERROR_HOJA_ = /^#(REF|VALUE|DIV\/0|N\/A|NAME\?|NUM|NULL|ERROR)[!?]?$/;
+
+/**
+ * Traduce un valor leído de Google Sheets al mismo modelo de celda que produce
+ * la lectura del .xlsx, para que las reglas de negocio sean idénticas en los
+ * dos caminos: { tipo, texto, numero?, esFecha? }.
+ */
+function celdaDeValor_(valor) {
+  if (valor === '' || valor === null || valor === undefined) return CELDA_VACIA_;
+  if (valor instanceof Date) {
+    return { tipo: 'numero', texto: formatearFecha_(valor, 'yyyy-MM-dd'), numero: NaN, esFecha: true };
+  }
+  if (typeof valor === 'number') {
+    return { tipo: 'numero', texto: String(valor), numero: valor, esFecha: false };
+  }
+  if (typeof valor === 'boolean') {
+    return { tipo: 'booleano', texto: valor ? 'VERDADERO' : 'FALSO' };
+  }
+  const texto = String(valor);
+  if (ERROR_HOJA_.test(texto.trim())) return { tipo: 'error', texto: texto.trim() };
+  return texto.trim() === '' ? CELDA_VACIA_ : { tipo: 'texto', texto: texto };
+}
+
+function progresoHoja_(estado) {
+  const primera = (estado.reporte.filaEncabezado || 1) + 1;
+  const total = Math.max(estado.ultimaFila - primera + 1, 1);
+  const hechas = Math.min(Math.max(estado.fila - primera, 0), total);
+  return {
+    texto: 'Validando registros… ' + numeroTexto_(hechas) + ' de ' + numeroTexto_(total),
+    porcentaje: Math.round(hechas * 100 / total)
+  };
+}
+
+/* ------------------------------------------------------------------------ */
 /* Reporte                                                                   */
 /* ------------------------------------------------------------------------ */
 
-function nuevoReporte_(archivo) {
+function nuevoReporte_(archivo, maxDetalle) {
   return {
     archivo: archivo,
     hoja: '',
@@ -528,7 +767,7 @@ function nuevoReporte_(archivo) {
     errores: [],
     advertencias: [],
     truncado: false,
-    maxDetalle: CONFIG.MAX_ERRORES_DETALLE,
+    maxDetalle: maxDetalle || CONFIG.MAX_ERRORES_DETALLE,
     resumenColumnas: [],
     resumenTipos: [],
     fechaValidacion: '',
@@ -563,7 +802,7 @@ function agregarErrorRegistro_(reporte, error) {
   const porTipo = reporte._porTipo[error.tipo] ||
     (reporte._porTipo[error.tipo] = { tipo: error.tipo, tipoTexto: error.tipoTexto, total: 0 });
   porTipo.total++;
-  if (reporte.errores.length < CONFIG.MAX_ERRORES_DETALLE) {
+  if (reporte.errores.length < reporte.maxDetalle) {
     reporte.errores.push(Object.assign({ ambito: 'registro' }, error));
   } else {
     reporte.truncado = true;
