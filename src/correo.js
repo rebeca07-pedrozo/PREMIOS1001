@@ -5,11 +5,17 @@
 /*  Aprobado Por      : Leydi Librado                                                    */
 /*                                                                                       */
 /*  Proyecto independiente de Apps Script.                                               */
-/*  Los ID van en Configuracion del proyecto -> Propiedades del script:                  */
-/*     ID_BASE        ID del Excel BaseCorreos                                           */
-/*     ID_LOGO        ID de la imagen del logo en Drive                                  */
-/*     URL_INTERFAZ   URL de la interfaz de cargue                                       */
-/*     DIA_LIMITE     (opcional) dia maximo de cargue, por defecto 2                     */
+/*                                                                                       */
+/*  PROPIEDADES DEL SCRIPT (Configuracion del proyecto -> Propiedades del script):        */
+/*     ID_BASE        ID del Excel BaseCorreos                           obligatoria     */
+/*     ID_LOGO        ID de la imagen del logo en Drive                  obligatoria     */
+/*     URL_INTERFAZ   URL de la interfaz de cargue                       obligatoria     */
+/*     DIA_LIMITE     Dia maximo de cargue, por defecto 2                opcional        */
+/*     CORREO_PRUEBA  La crea y borra sola PruebaCorreoPremios           no tocar        */
+/*                                                                                       */
+/*  FUNCIONES:                                                                           */
+/*     PruebaCorreoPremios          envia solo a quien ejecuta, para revisar             */
+/*     EnviarCorreoMensualPremios   envia a toda la lista, va en el activador mensual     */
 /*****************************************************************************************/
 
 function EnviarCorreoMensualPremios() {
@@ -31,8 +37,10 @@ function EnviarCorreoMensualPremios() {
   /*                   DATOS DE LA BASE                           */
   /****************************************************************/
   var hoja = SpreadsheetApp.openById(idBase).getSheetByName('BaseCorreos');
-  var dirEmail = props.getProperty('CORREO_PRUEBA') || hoja.getRange('C2').getValue();
   var fecha = hoja.getRange('F3').getValue();
+
+  // Si existe CORREO_PRUEBA el envio es solo de prueba
+  var dirEmail = props.getProperty('CORREO_PRUEBA') || hoja.getRange('C2').getValue();
 
   if (!dirEmail) {
     throw new Error('La celda C2 de BaseCorreos esta vacia, no hay destinatarios.');
@@ -71,7 +79,7 @@ function EnviarCorreoMensualPremios() {
   // Cabecera roja
   '<tr><td style="background:#ED1C27;padding:26px 28px 30px;">' +
     '<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr>' +
-      '<td><img src="cid:logoDavivienda" height="24" alt="Davivienda" style="display:block;border:0;"></td>' +
+      '<td><img src="cid:logoDavivienda" height="34" alt="Davivienda" style="display:block;border:0;"></td>' +
       '<td align="right" style="font-size:12px;color:#FFFFFF;">Dirección de Impuestos</td>' +
     '</tr></table>' +
     '<p style="margin:0 0 6px;font-size:13px;color:#FFFFFF;">Solicitud mensual</p>' +
@@ -131,15 +139,15 @@ function EnviarCorreoMensualPremios() {
 
     // Firma
     '<table width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:2px solid #ED1C27;padding:18px 0 0;">' +
-      '<p style="margin:0;font-size:14px;color:#3A3A3A;line-height:1.7;">Cordialmente,<br><b>Leydi y Librado Bernal</b><br>' +
-      '<span style="color:#6B6B6B;">Profesional II &mdash; Dpto. Impuestos<br>Torre Bolívar, Av. El Dorado # 68 B 31, piso 7<br>Banco Davivienda S.A.</span></p>' +
+      '<p style="margin:0;font-size:14px;color:#3A3A3A;line-height:1.7;">Cordialmente,<br><b>Dirección de Impuestos</b><br>' +
+      '<span style="color:#6B6B6B;">Torre Bolívar, Av. El Dorado # 68 B 31, piso 7<br>Banco Davivienda S.A.</span></p>' +
     '</td></tr></table>' +
 
   '</td></tr>' +
 
   // Pie
   '<tr><td align="center" style="background:#F4F4F4;padding:15px 28px;">' +
-    '<p style="margin:0;font-size:12px;color:#6B6B6B;">Mensaje automático. Si tiene dudas sobre el cargue, responda a este correo.</p>' +
+    '<p style="margin:0;font-size:12px;color:#6B6B6B;">Mensaje automático generado por la Dirección de Impuestos. No responda a este correo.</p>' +
   '</td></tr>' +
 
   '</table></div>';
@@ -148,12 +156,26 @@ function EnviarCorreoMensualPremios() {
   /*                   ENVIO                                      */
   /****************************************************************/
   MailApp.sendEmail({
-    name: 'Premios y CashBack ' + anio,
+    name: 'Impuestos Davivienda',
     to: dirEmail,
     subject: 'Solicitud información Premios - corte ' + fechaCorte,
     htmlBody: mensaje,
-    inlineImages: { logoDavivienda: logo }
+    inlineImages: { logoDavivienda: logo },
+    noReply: true
   });
+}
+
+/****************************************************************/
+/*          PRUEBA: envia solo a quien ejecuta                  */
+/****************************************************************/
+function PruebaCorreoPremios() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('CORREO_PRUEBA', Session.getActiveUser().getEmail());
+  try {
+    EnviarCorreoMensualPremios();
+  } finally {
+    props.deleteProperty('CORREO_PRUEBA');
+  }
 }
 
 /****************************************************************/
@@ -166,16 +188,4 @@ function paso(numero, texto) {
     '</td>' +
     '<td style="padding:2px 0 14px;line-height:1.6;">' + texto + '</td>' +
   '</tr>';
-}
-
-/****************************************************************/
-/*          PRUEBA: envia solo a quien ejecuta                  */
-/****************************************************************/
-function PruebaCorreoPremios() {
-  var props = PropertiesService.getScriptProperties();
-  var original = props.getProperty('CORREO_PRUEBA');
-  props.setProperty('CORREO_PRUEBA', Session.getActiveUser().getEmail());
-  EnviarCorreoMensualPremios();
-  if (original) { props.setProperty('CORREO_PRUEBA', original); }
-  else { props.deleteProperty('CORREO_PRUEBA'); }
 }
