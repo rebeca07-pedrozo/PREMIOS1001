@@ -453,7 +453,7 @@
         <span class="zona__icono" aria-hidden="true"><svg class="icono"><use href="#i-subir"/></svg></span>
         <span class="zona__titulo">Arrastre aquí su archivo .xlsx</span>
         <span class="zona__texto">o <span class="zona__enlace">selecciónelo desde su equipo</span></span>
-        <span id="zona-nota" class="zona__nota">Libro de Excel (.xlsx) · hasta 5 MB</span>
+        <span id="zona-nota" class="zona__nota">Libro de Excel (.xlsx) · hasta 25 MB</span>
       </label>
 
       <div id="archivo" class="archivo" hidden>
@@ -493,7 +493,9 @@
       <section class="guia__bloque">
         <h2>Cómo cargar</h2>
         <ol class="pasos">
-          <li>Descargue la plantilla oficial y diligénciela sin cambiar los encabezados.</li>
+          <li>Descargue la plantilla oficial y diligénciela sin cambiar los encabezados. En la columna MES
+            escriba el número del mes al que corresponde la información (1 = enero … 12 = diciembre) y use un
+            archivo por mes.</li>
           <li>Escriba su oficina y seleccione o arrastre el archivo .xlsx.</li>
           <li>Presione «Validar archivo». Si todo está bien, se guarda automáticamente; si no, verá exactamente qué corregir.</li>
         </ol>
@@ -506,13 +508,16 @@
           <span>Descargar plantilla oficial</span>
         </button>
         <p id="plantilla-error" class="error-campo" hidden></p>
+        <p class="ayuda">¿Alguien más la necesita? Comparta el enlace de esta aplicación: el botón entrega la
+          plantilla sin pedir acceso a Google Drive.</p>
       </section>
       <section class="guia__bloque">
         <h2>Archivo permitido</h2>
         <ul class="lista-simple">
           <li>Libro de Excel (.xlsx)</li>
-          <li id="regla-tamano">Hasta 5 MB</li>
+          <li id="regla-tamano">Hasta 25 MB</li>
           <li>Un archivo por carga</li>
+          <li>Un solo mes por archivo, según la columna MES</li>
           <li>Encabezados iguales a los de la plantilla oficial</li>
         </ul>
       </section>
@@ -1161,9 +1166,11 @@
 
   function renderExito() {
     var r = estado.resultado;
+    var periodo = (estado.validacion && estado.validacion.periodo) || null;
     el.exitoRepetido.hidden = !r.repetido;
     llenarDatos(el.exitoDatos, [
       ['Archivo', r.archivo],
+      ['Mes de la información', periodo ? periodo.mes + ' ' + periodo.anio : ''],
       ['Guardado en', r.carpeta],
       ['Registros', numero.format(r.registros)],
       ['Fecha y hora', r.fecha],
@@ -1178,7 +1185,8 @@
   function renderReporte() {
     var r = estado.reporte;
     el.reporteArchivo.textContent = r.archivo + (r.hoja ? ' · hoja «' + r.hoja + '»' : '') +
-      (r.filaEncabezado ? ' · encabezados en la fila ' + r.filaEncabezado : '');
+      (r.filaEncabezado ? ' · encabezados en la fila ' + r.filaEncabezado : '') +
+      (r.periodo ? ' · mes ' + r.periodo.mes + ' ' + r.periodo.anio : '');
     el.cRegistros.textContent = numero.format(r.registrosRevisados);
     el.cFilas.textContent = numero.format(r.filasConError);
     el.cErrores.textContent = numero.format(r.totalErrores);

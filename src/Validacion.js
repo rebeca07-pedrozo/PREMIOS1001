@@ -76,12 +76,14 @@ const TIPOS_ERROR = Object.freeze({
   NO_ES_LIBRO_EXCEL: 'No es un libro de Excel',
   FORMATO_ANTIGUO_O_PROTEGIDO: 'Formato .xls o archivo protegido',
   ARCHIVO_DANADO: 'Archivo dañado o incompleto',
+  ARCHIVO_NO_PROCESABLE: 'Archivo con demasiados registros',
   ESTRUCTURA_NO_RECONOCIDA: 'Estructura no reconocida',
   HOJAS_AMBIGUAS: 'Más de una hoja con la plantilla',
   ENCABEZADO_FALTANTE: 'Encabezado faltante',
   ENCABEZADO_DIFERENTE: 'Encabezado diferente',
   ENCABEZADO_DUPLICADO: 'Encabezado duplicado',
   SIN_REGISTROS: 'Archivo sin registros',
+  MESES_MEZCLADOS: 'Varios meses en un mismo archivo',
   DEMASIADAS_FILAS: 'Demasiados registros',
   // Registros
   CAMPO_VACIO: 'Campo obligatorio vacío',
@@ -113,17 +115,18 @@ function validarLibro_(bytes, nombreArchivo) {
   const reporte = nuevoReporte_(nombreArchivo);
 
   let libro;
+  let candidatos;
   try {
     libro = abrirLibro_(bytes);
+    // La lectura de las hojas va dentro del try porque también puede fallar
+    // por tamaño: así el usuario recibe una recomendación y no un error interno.
+    candidatos = detectarEncabezados_(libro);
   } catch (e) {
-    if (e instanceof ErrorApp && e.recomendacion) {
-      agregarErrorEstructura_(reporte, { tipo: e.codigo, descripcion: e.message, recomendacion: e.recomendacion });
-      return cerrarReporte_(reporte);
-    }
-    throw e;
+    const fallo = e instanceof ErrorApp ? e : errorArchivoNoProcesable_(bytes.length, e);
+    agregarErrorEstructura_(reporte, { tipo: fallo.codigo, descripcion: fallo.message, recomendacion: fallo.recomendacion });
+    return cerrarReporte_(reporte);
   }
 
-  const candidatos = detectarEncabezados_(libro);
   const mejor = candidatos[0];
   const totalObligatorios = ESQUEMA.filter(function (c) { return c.obligatorio; }).length;
 
@@ -273,6 +276,8 @@ function validarRegistros_(libro, elegido, columnas, reporte) {
   const anioActual = Number(formatearFecha_(new Date(), 'yyyy'));
   const contexto = { anios: [anioActual, anioActual - 1] };
   const filasConError = {};
+  const columnaMes = columnas.filter(function (c) { return c.col.clave === 'mes'; })[0] || null;
+  const meses = {};
   let registros = 0;
   let excedido = false;
 
@@ -297,6 +302,7 @@ function validarRegistros_(libro, elegido, columnas, reporte) {
         valor: recortar_(celda.texto, 200)
       }, hallazgo));
     });
+    if (columnaMes) acumularMes_(meses, celdas[columnaMes.indice], numero);
     return true;
   });
 
@@ -306,9 +312,10 @@ function validarRegistros_(libro, elegido, columnas, reporte) {
   if (excedido) {
     agregarErrorEstructura_(reporte, {
       tipo: 'DEMASIADAS_FILAS',
-      descripcion: 'El archivo tiene más de ' + String(CONFIG.MAX_FILAS).replace(/\B(?=(\d{3})+(?!\d))/g, '.') +
+      descripcion: 'El archivo tiene más de ' + numeroTexto_(CONFIG.MAX_FILAS) +
         ' registros, el máximo que se puede validar en una sola carga.',
-      recomendacion: 'Divida la información en varios archivos y cárguelos por separado.'
+      recomendacion: 'Divida la información en varios archivos —uno por mes y, si hace falta, uno por oficina— y ' +
+        'cárguelos por separado.'
     });
   } else if (registros === 0) {
     agregarErrorEstructura_(reporte, {
@@ -318,6 +325,52 @@ function validarRegistros_(libro, elegido, columnas, reporte) {
       recomendacion: 'Diligencie al menos un registro debajo de los encabezados y vuelva a cargar el archivo.'
     });
   }
+
+  determinarPeriodo_(reporte, meses, columnaMes);
+}
+
+/** Cuenta los meses válidos encontrados en la columna MES. */
+function acumularMes_(meses, celda, fila) {
+  const mes = mesDeCelda_(celda);
+  if (!mes) return;
+  const registro = meses[mes] || (meses[mes] = { mes: mes, total: 0, primeraFila: fila });
+  registro.total++;
+}
+
+/** Número de mes (1 a 12) que contiene la celda; 0 si no es un mes válido. */
+function mesDeCelda_(celda) {
+  if (!celda || esVacia_(celda) || celda.esFecha) return 0;
+  const texto = String(celda.texto).trim();
+  const n = celda.tipo === 'numero' ? celda.numero : (/^\d{1,2}$/.test(texto) ? Number(texto) : NaN);
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : 0;
+}
+
+/**
+ * El periodo de la carga lo define la columna MES del archivo y no la fecha en
+ * que se sube: en los primeros días de un mes es normal cargar la información
+ * del mes anterior. Un archivo con varios meses se rechaza, porque entonces
+ * ninguna carpeta representa su contenido.
+ */
+function determinarPeriodo_(reporte, meses, columnaMes) {
+  const detectados = Object.keys(meses).map(function (k) { return meses[k]; })
+    .sort(function (a, b) { return a.mes - b.mes; });
+  if (!detectados.length) return;
+  if (detectados.length === 1) {
+    reporte.periodo = periodoDelMes_(detectados[0].mes);
+    return;
+  }
+  agregarErrorEstructura_(reporte, {
+    tipo: 'MESES_MEZCLADOS',
+    letra: columnaMes ? columnaMes.letra : '',
+    columna: 'MES',
+    descripcion: 'La columna MES tiene ' + detectados.length + ' meses distintos en el mismo archivo: ' +
+      unirLista_(detectados.map(function (d) {
+        return CONFIG.MESES[d.mes - 1] + ' (' + d.mes + ') en ' + numeroTexto_(d.total) +
+          (d.total === 1 ? ' registro, fila ' : ' registros, desde la fila ') + d.primeraFila;
+      })) + '.',
+    recomendacion: 'Cada carga se guarda en la carpeta del mes que indica la columna MES, así que un mismo archivo ' +
+      'no puede mezclar meses. Separe la información en un archivo por mes y cárguelos uno por uno.'
+  });
 }
 
 function evaluarCelda_(col, celda, contexto) {
@@ -341,13 +394,12 @@ const REGLAS_ = Object.freeze({
   codigo: function () { return null; },
 
   mes: function (celda) {
+    if (mesDeCelda_(celda)) return null;
     const texto = celda.texto.trim();
     if (celda.esFecha) {
       return hallazgo_('MES_INVALIDO', 'La celda tiene formato de fecha; este campo debe contener solo el número del mes.',
         'Cambie el formato de la celda a «General» o «Número» y escriba el mes de 1 a 12 (por ejemplo, 9 para septiembre).');
     }
-    const n = celda.tipo === 'numero' ? celda.numero : (/^\d{1,2}$/.test(texto) ? Number(texto) : NaN);
-    if (Number.isInteger(n) && n >= 1 && n <= 12) return null;
     const posicion = CONFIG.MESES.indexOf(normalizarEncabezado_(texto) === 'SETIEMBRE' ? 'SEPTIEMBRE' : normalizarEncabezado_(texto));
     if (posicion !== -1) {
       return hallazgo_('MES_INVALIDO', 'Se escribió el nombre del mes («' + texto + '»), pero este campo debe ser numérico.',
@@ -467,6 +519,7 @@ function nuevoReporte_(archivo) {
     archivo: archivo,
     hoja: '',
     filaEncabezado: null,
+    periodo: null,
     aprobado: false,
     registrosRevisados: 0,
     filasConError: 0,
@@ -546,6 +599,7 @@ function generarReporteXlsx_(entrada) {
     ['Fecha de validación', texto(r.fechaValidacion)],
     ['Hoja revisada', texto(r.hoja)],
     ['Fila de encabezados', entero(r.filaEncabezado)],
+    ['Mes de la información', r.periodo ? texto(r.periodo.mes + ' ' + r.periodo.anio) : '(no determinado)'],
     ['Registros revisados', entero(r.registrosRevisados)],
     ['Filas con inconsistencias', entero(r.filasConError)],
     ['Errores detectados', entero(r.totalErrores)],
@@ -675,6 +729,33 @@ function hojaReporteXml_(filas, anchos, estilo, conEncabezado) {
 /* ------------------------------------------------------------------------ */
 
 /**
+ * Un fallo al descomprimir o leer el libro tiene dos causas posibles: el
+ * archivo está dañado, o tiene tantos registros que Apps Script no puede
+ * sostener la hoja descomprimida en memoria (cerca de 1 KB por registro).
+ * Se distinguen por el peso del archivo para no dar una recomendación falsa.
+ */
+function errorArchivoNoProcesable_(bytes, causa) {
+  console.error(JSON.stringify({
+    operacion: 'abrirLibro',
+    bytes: bytes,
+    error: String(causa && causa.message ? causa.message : causa)
+  }));
+  if (bytes > CONFIG.BYTES_RIESGO_MEMORIA) {
+    return new ErrorApp('ARCHIVO_NO_PROCESABLE',
+      'El archivo (' + tamanoLegible_(bytes) + ') no se pudo abrir. Si está completo, tiene más registros de los que ' +
+      'se pueden validar en una sola carga: la hoja descomprimida no cabe en la memoria disponible.', {
+        recomendacion: 'Divida la información en varios archivos —uno por mes y, si hace falta, uno por oficina— de ' +
+          'máximo ' + numeroTexto_(CONFIG.MAX_FILAS) + ' registros cada uno, y cárguelos por separado.',
+        detalle: String(causa)
+      });
+  }
+  return new ErrorApp('ARCHIVO_DANADO', 'El archivo está dañado o incompleto y no se pudo abrir.', {
+    recomendacion: 'Ábralo en Excel, guárdelo de nuevo como «Libro de Excel (.xlsx)» y vuelva a cargarlo.',
+    detalle: String(causa)
+  });
+}
+
+/**
  * Abre el paquete .xlsx y prepara lo necesario para leer sus hojas.
  * Lanza ErrorApp (con recomendación) si el archivo no es un libro legible.
  */
@@ -701,10 +782,7 @@ function abrirLibro_(bytes) {
   try {
     entradas = Utilities.unzip(Utilities.newBlob(bytes, 'application/zip', 'libro.zip'));
   } catch (e) {
-    throw new ErrorApp('ARCHIVO_DANADO', 'El archivo está dañado o incompleto y no se pudo abrir.', {
-      recomendacion: 'Ábralo en Excel, guárdelo de nuevo como «Libro de Excel (.xlsx)» y vuelva a cargarlo.',
-      detalle: String(e)
-    });
+    throw errorArchivoNoProcesable_(bytes.length, e);
   }
   const partes = {};
   entradas.forEach(function (blob) {

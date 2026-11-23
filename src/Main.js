@@ -10,6 +10,8 @@
  *   LOGO_ID          Logo institucional.
  *   AUDITORIA_ID     Hoja de auditoría. No hace falta crearla: la aplicación
  *                    la crea en la carpeta raíz la primera vez y guarda su ID.
+ *   MAX_MB           Opcional. Tamaño máximo por archivo, en MB (1 a 40).
+ *                    Si no está, se usa CONFIG.MAX_BYTES.
  *
  * Solo las funciones sin guion bajo final (doGet, api*, verificarConfiguracion)
  * pueden invocarse desde la interfaz o desde el editor.
@@ -20,10 +22,18 @@ const CONFIG = Object.freeze({
   ZONA_HORARIA: 'America/Bogota',
   MIME_XLSX: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 
-  // Límites de la carga.
-  MAX_BYTES: 5 * 1024 * 1024,
-  MAX_FILAS: 20000,
+  // Límites de la carga. MAX_BYTES es el valor por omisión y puede ajustarse
+  // sin tocar el código con la propiedad del script MAX_MB (1 a 40).
+  // Lo que limita la validación no es el peso del .xlsx —va comprimido— sino
+  // la cantidad de registros: Apps Script tiene que sostener la hoja
+  // descomprimida en memoria y cada registro ocupa cerca de 1 KB.
+  MAX_BYTES: 25 * 1024 * 1024,
+  MAX_FILAS: 40000,
   MAX_ERRORES_DETALLE: 5000,
+
+  // Desde este peso, un fallo al abrir el libro se atribuye a su tamaño y no
+  // a que esté dañado (ver errorArchivoNoProcesable_ en Validacion.gs).
+  BYTES_RIESGO_MEMORIA: 4 * 1024 * 1024,
 
   // Detección de la estructura de la plantilla.
   FILAS_BUSQUEDA_ENCABEZADO: 10,
@@ -44,7 +54,8 @@ const CONFIG = Object.freeze({
     CARPETA_RAIZ: 'CARPETA_RAIZ_ID',
     PLANTILLA: 'PLANTILLA_ID',
     LOGO: 'LOGO_ID',
-    AUDITORIA: 'AUDITORIA_ID'
+    AUDITORIA: 'AUDITORIA_ID',
+    MAX_MB: 'MAX_MB'
   }),
 
   AUDITORIA: Object.freeze({
@@ -124,7 +135,7 @@ function datosIniciales_() {
     correo: usuarioActual_(),
     logo: logoDataUri_(),
     version: CONFIG.VERSION,
-    maxBytes: CONFIG.MAX_BYTES,
+    maxBytes: limiteBytes_(),
     obligatorios: ESQUEMA.filter(function (c) { return c.obligatorio; })
       .map(function (c) { return c.encabezado; })
   };
@@ -189,8 +200,9 @@ function apiValidar(solicitud) {
 }
 
 /**
- * Guarda en Drive un archivo previamente validado. El servidor lo valida de
- * nuevo antes de guardar; el token garantiza que un reintento no duplique.
+ * Guarda en Drive un archivo previamente validado. El token, emitido por el
+ * servidor, y el hash del contenido garantizan que se guarde exactamente el
+ * archivo que se validó y que un reintento no duplique la carga.
  * @param {{nombre:string, base64:string, oficina:string, token:string}} solicitud
  */
 function apiAlmacenar(solicitud) {
@@ -228,7 +240,18 @@ function verificarConfiguracion() {
   });
   revisar('Plantilla oficial', function () {
     const archivo = DriveApp.getFileById(propiedad_(CONFIG.PROPIEDADES.PLANTILLA, true));
-    return archivo.getName() + ' (' + archivo.getMimeType() + ')';
+    // El acceso en Drive es informativo: la aplicación entrega la plantilla
+    // desde el servidor, así que no consultarlo no impide nada.
+    let acceso = '';
+    try {
+      const privada = archivo.getSharingAccess() === DriveApp.Access.PRIVATE;
+      acceso = ' · acceso en Drive: ' + archivo.getSharingAccess() +
+        (privada ? ' · no hace falta cambiarlo: el botón «Descargar plantilla oficial» la entrega desde el ' +
+          'servidor. Comparta el enlace de la aplicación, no el del archivo en Drive.' : '');
+    } catch (e) {
+      acceso = ' · no fue posible consultar su acceso en Drive: ' + (e && e.message ? e.message : e);
+    }
+    return archivo.getName() + ' (' + archivo.getMimeType() + ')' + acceso;
   });
   revisar('Logo', function () {
     const archivo = DriveApp.getFileById(propiedad_(CONFIG.PROPIEDADES.LOGO, true));
@@ -240,8 +263,13 @@ function verificarConfiguracion() {
       return libro.getName() + ' · ' + libro.getUrl();
     });
   });
-  revisar('Carpeta destino del periodo actual', function () {
-    return 'PREMIOS V2.0.0 / ' + periodoDe_(new Date()).ruta + ' (se crea en la primera carga si no existe)';
+  revisar('Carpeta destino', function () {
+    const ejemplo = periodoDelMes_(Number(formatearFecha_(new Date(), 'M')));
+    return 'PREMIOS V2.0.0 / {año} / {mes de la columna MES} · un archivo con MES = ' + ejemplo.numero +
+      ' se guarda en ' + ejemplo.ruta + ' (la carpeta se crea en la primera carga si no existe)';
+  });
+  revisar('Límites de carga', function () {
+    return tamanoLegible_(limiteBytes_()) + ' por archivo y ' + numeroTexto_(CONFIG.MAX_FILAS) + ' registros';
   });
   revisar('Usuario que ejecuta', function () { return usuarioActual_() || '(no disponible)'; });
   const texto = lineas.join('\n');
@@ -272,7 +300,15 @@ function validarCarga_(solicitud) {
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put('tok:' + token, JSON.stringify({
     hash: archivo.hash,
-    confirmarDuplicado: confirmarDuplicado
+    confirmarDuplicado: confirmarDuplicado,
+    // Resumen de esta validación: es lo único que necesita el guardado, así
+    // que el archivo no se vuelve a abrir al almacenarlo.
+    resumen: {
+      registrosRevisados: reporte.registrosRevisados,
+      filasConError: reporte.filasConError,
+      totalErrores: reporte.totalErrores,
+      periodo: reporte.periodo
+    }
   }), CONFIG.TOKEN_TTL_SEG);
   return { estado: 'VALIDO', reporte: reporte, token: token };
 }
@@ -306,18 +342,20 @@ function almacenarCarga_(solicitud) {
     if (duplicado) return { estado: 'DUPLICADO', duplicado: duplicado };
   }
 
-  // La validación en el servidor es la única autoridad: se repite antes de guardar.
-  const reporte = validarLibro_(archivo.bytes, archivo.nombre);
-  if (!reporte.aprobado) {
-    registrarRechazo_({ correo: correo, archivo: archivo, reporte: reporte, duplicadoConfirmado: !!datosToken.confirmarDuplicado });
-    return { estado: 'RECHAZADO', reporte: reporte };
+  // El libro no se abre de nuevo: la validación ya se ejecutó en el servidor
+  // sobre este mismo contenido, el token lo emitió el servidor y el hash
+  // SHA-256 confirma que los bytes recibidos son los mismos. Así un archivo
+  // grande se procesa una sola vez y la carga cabe en el tiempo de ejecución.
+  if (!datosToken.resumen || !datosToken.resumen.periodo) {
+    throw new ErrorApp('VALIDACION_VENCIDA',
+      'La validación de este archivo ya no está disponible. Valide el archivo de nuevo; no se guardó nada.');
   }
 
   const almacenamiento = guardarCarga_({
     token: token,
     correo: correo,
     archivo: archivo,
-    reporte: reporte,
+    reporte: datosToken.resumen,
     duplicadoConfirmado: !!datosToken.confirmarDuplicado
   });
   return { estado: 'ALMACENADO', almacenamiento: almacenamiento };
@@ -345,9 +383,8 @@ function prepararArchivo_(solicitud) {
   if (typeof base64 !== 'string' || !base64) {
     throw new ErrorApp('ARCHIVO_VACIO', 'El archivo llegó vacío. Selecciónelo de nuevo.');
   }
-  if (base64.length > Math.ceil(CONFIG.MAX_BYTES / 3) * 4 + 4) {
-    throw new ErrorApp('ARCHIVO_MUY_GRANDE', 'El archivo supera el máximo permitido de ' + tamanoLegible_(CONFIG.MAX_BYTES) + '.');
-  }
+  const maximo = limiteBytes_();
+  if (base64.length > Math.ceil(maximo / 3) * 4 + 4) throw errorArchivoMuyGrande_(maximo);
   let bytes;
   try {
     bytes = Utilities.base64Decode(base64);
@@ -355,9 +392,7 @@ function prepararArchivo_(solicitud) {
     throw new ErrorApp('ARCHIVO_ILEGIBLE', 'El archivo no llegó completo al servidor. Selecciónelo y valídelo de nuevo.', { detalle: String(e) });
   }
   if (!bytes.length) throw new ErrorApp('ARCHIVO_VACIO', 'El archivo está vacío (0 bytes). Selecciónelo de nuevo.');
-  if (bytes.length > CONFIG.MAX_BYTES) {
-    throw new ErrorApp('ARCHIVO_MUY_GRANDE', 'El archivo supera el máximo permitido de ' + tamanoLegible_(CONFIG.MAX_BYTES) + '.');
-  }
+  if (bytes.length > maximo) throw errorArchivoMuyGrande_(maximo);
   return { nombre: nombre, oficina: oficina, bytes: bytes, tamano: bytes.length, hash: hashHex_(bytes) };
 }
 
@@ -370,6 +405,27 @@ function leerToken_(token) {
 /* ------------------------------------------------------------------------ */
 /* Utilidades compartidas                                                    */
 /* ------------------------------------------------------------------------ */
+
+let limiteBytesMemo_ = 0;
+
+/**
+ * Tamaño máximo por archivo. La propiedad MAX_MB permite ajustarlo sin
+ * cambiar el código; fuera del rango de 1 a 40 MB se usa el valor de CONFIG.
+ */
+function limiteBytes_() {
+  if (limiteBytesMemo_) return limiteBytesMemo_;
+  const mb = Number(propiedad_(CONFIG.PROPIEDADES.MAX_MB, false));
+  limiteBytesMemo_ = Number.isFinite(mb) && mb >= 1 && mb <= 40
+    ? Math.round(mb * 1024 * 1024)
+    : CONFIG.MAX_BYTES;
+  return limiteBytesMemo_;
+}
+
+function errorArchivoMuyGrande_(maximo) {
+  return new ErrorApp('ARCHIVO_MUY_GRANDE',
+    'El archivo supera el máximo permitido de ' + tamanoLegible_(maximo) + '. Divida la información en varios ' +
+    'archivos —uno por mes y, si hace falta, uno por oficina— y cárguelos por separado.');
+}
 
 function propiedad_(clave, requerida) {
   const valor = PropertiesService.getScriptProperties().getProperty(clave);
@@ -407,6 +463,11 @@ function hashHex_(bytes) {
 
 function tamanoLegible_(bytes) {
   return bytes >= 1048576 ? (Math.round(bytes / 104857.6) / 10) + ' MB' : Math.round(bytes / 1024) + ' KB';
+}
+
+/** 40000 -> «40.000». */
+function numeroTexto_(numero) {
+  return String(numero).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 function formatearFecha_(fecha, patron) {

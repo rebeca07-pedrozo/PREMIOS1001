@@ -5,8 +5,9 @@
  * hoja de auditoría (cargas y usuarios), detección de duplicados,
  * idempotencia y bloqueo para operaciones concurrentes.
  *
- * Estructura de destino:  PREMIOS V2.0.0 / {AÑO de carga} / {MES de carga} /
- * El periodo lo define la fecha en que se carga (zona horaria de Bogotá).
+ * Estructura de destino:  PREMIOS V2.0.0 / {AÑO} / {MES} /
+ * El periodo lo define la columna MES del archivo cargado, no la fecha en que
+ * se sube; el año se deduce de ese mes (ver periodoDelMes_).
  */
 
 const ESTADO_ALMACENAMIENTO = Object.freeze({
@@ -16,6 +17,11 @@ const ESTADO_ALMACENAMIENTO = Object.freeze({
   NO_APLICA: 'NO_APLICA'
 });
 
+/**
+ * Columnas de la hoja CARGAS. PERIODO es el mes al que corresponde la
+ * información (columna MES del archivo); la fecha en que se subió queda
+ * registrada en FECHA Y HORA.
+ */
 const COL_CARGAS_ = Object.freeze({
   ENCABEZADOS: ['FOLIO', 'FECHA Y HORA', 'CORREO', 'OFICINA', 'ARCHIVO', 'HASH SHA-256', 'PERIODO',
     'REGISTROS REVISADOS', 'FILAS CON ERROR', 'TOTAL ERRORES', 'RESULTADO', 'ALMACENAMIENTO',
@@ -40,6 +46,13 @@ const COL_USUARIOS_ = Object.freeze({
  * duplicadas y un reintento con el mismo token no crea dos archivos.
  */
 function guardarCarga_(datos) {
+  // Sin periodo no hay carpeta destino posible: antes que guardar en un lugar
+  // equivocado, no se guarda nada.
+  if (!datos.reporte || !datos.reporte.periodo) {
+    throw new ErrorApp('PERIODO_NO_DETERMINADO',
+      'No fue posible establecer el mes al que corresponde la información del archivo, así que no se guardó nada. ' +
+      'Valide el archivo de nuevo.');
+  }
   return conBloqueo_(CONFIG.ESPERA_BLOQUEO_MS, function () {
     const hoja = hojaAuditoria_(CONFIG.AUDITORIA.HOJA_CARGAS, true);
     const archivo = datos.archivo;
@@ -75,7 +88,7 @@ function guardarCarga_(datos) {
 
     let creado = null;
     try {
-      const periodo = periodoDe_(new Date());
+      const periodo = datos.reporte.periodo;
       const carpeta = conReintentos_(function () { return carpetaDelPeriodo_(periodo); });
       escribirCampos_(hoja, fila, { PERIODO: periodo.clave, CARPETA: periodo.ruta });
 
@@ -135,16 +148,29 @@ function resultadoAlmacenamiento_(registro, repetido) {
 /* Carpetas                                                                  */
 /* ------------------------------------------------------------------------ */
 
-function periodoDe_(fecha) {
-  const anio = formatearFecha_(fecha, 'yyyy');
-  const mes = Number(formatearFecha_(fecha, 'M'));
+function periodo_(anio, mes) {
   const nombreMes = CONFIG.MESES[mes - 1];
   return {
-    anio: anio,
+    anio: String(anio),
     mes: nombreMes,
+    numero: mes,
     clave: anio + '-' + (mes < 10 ? '0' : '') + mes,
     ruta: anio + ' / ' + nombreMes
   };
+}
+
+/**
+ * Deduce el año del mes que trae el archivo tomando el periodo vencido más
+ * reciente: un mes igual o anterior al actual pertenece al año en curso y un
+ * mes posterior al actual pertenece al año anterior. Así, un archivo con
+ * MES = 11 cargado en diciembre se guarda en noviembre del mismo año, y uno
+ * con MES = 12 cargado en enero se guarda en diciembre del año anterior.
+ */
+function periodoDelMes_(mes, referencia) {
+  const hoy = referencia || new Date();
+  const anioActual = Number(formatearFecha_(hoy, 'yyyy'));
+  const mesActual = Number(formatearFecha_(hoy, 'M'));
+  return periodo_(mes <= mesActual ? anioActual : anioActual - 1, mes);
 }
 
 function carpetaDelPeriodo_(periodo) {
@@ -263,7 +289,7 @@ function registrarRechazo_(datos) {
 
 function agregarFilaCarga_(hoja, d) {
   const ahora = new Date();
-  const periodo = periodoDe_(ahora);
+  const periodo = d.reporte && d.reporte.periodo ? d.reporte.periodo : null;
   const valores = [];
   valores[COL_CARGAS_.FOLIO - 1] = 'PRM-' + formatearFecha_(ahora, 'yyyyMMdd-HHmmss') + '-' +
     Utilities.getUuid().slice(0, 4).toUpperCase();
@@ -272,13 +298,13 @@ function agregarFilaCarga_(hoja, d) {
   valores[COL_CARGAS_.OFICINA - 1] = celdaSegura_(d.archivo.oficina);
   valores[COL_CARGAS_.ARCHIVO - 1] = celdaSegura_(d.archivo.nombre);
   valores[COL_CARGAS_.HASH - 1] = d.archivo.hash;
-  valores[COL_CARGAS_.PERIODO - 1] = periodo.clave;
+  valores[COL_CARGAS_.PERIODO - 1] = periodo ? periodo.clave : '';
   valores[COL_CARGAS_.REGISTROS - 1] = d.reporte.registrosRevisados;
   valores[COL_CARGAS_.FILAS_ERROR - 1] = d.reporte.filasConError;
   valores[COL_CARGAS_.ERRORES - 1] = d.reporte.totalErrores;
   valores[COL_CARGAS_.RESULTADO - 1] = d.resultado;
   valores[COL_CARGAS_.ALMACENAMIENTO - 1] = d.almacenamiento;
-  valores[COL_CARGAS_.CARPETA - 1] = d.almacenamiento === ESTADO_ALMACENAMIENTO.NO_APLICA ? '' : periodo.ruta;
+  valores[COL_CARGAS_.CARPETA - 1] = periodo && d.almacenamiento !== ESTADO_ALMACENAMIENTO.NO_APLICA ? periodo.ruta : '';
   valores[COL_CARGAS_.ID_ARCHIVO - 1] = '';
   valores[COL_CARGAS_.ENLACE - 1] = '';
   valores[COL_CARGAS_.TOKEN - 1] = d.token || '';
