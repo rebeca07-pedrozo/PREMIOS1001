@@ -1,6 +1,6 @@
 /*****************************************************************************************/
 /*                    ENVIO MENSUAL CORREO AUTOMATICO - PREMIOS                          */
-/*  Desarrollado Por  : Leydi Librado y Angelica Juan de Dios                            */
+/*  Desarrollado Por  : Rebeca Pedrozo Cueto                            */
 /*  Revisado Por      : Leydi Librado                                                    */
 /*  Aprobado Por      : Leydi Librado                                                    */
 /*                                                                                       */
