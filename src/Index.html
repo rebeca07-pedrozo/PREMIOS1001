@@ -677,6 +677,7 @@
     base64: null,
     grande: false,
     cargaId: null,
+    corsAutorizado: null,
     progreso: null,
     oficinaValidada: '',
     token: null,
@@ -905,6 +906,7 @@
     cancelarCargaPendiente();
     estado.archivo = null;
     estado.grande = false;
+    estado.corsAutorizado = null;
     estado.base64 = null;
     estado.token = null;
     estado.duplicado = null;
@@ -1003,9 +1005,12 @@
     return llamar('apiIniciarCarga', {
       nombre: estado.archivo.name,
       tamano: estado.archivo.size,
-      oficina: oficina
+      oficina: oficina,
+      // Google concede el permiso de subida a este origen al crear la sesión.
+      origen: window.location.origin
     }).then(function (r) {
       estado.cargaId = r.cargaId;
+      estado.corsAutorizado = r.corsAutorizado;
       return subirPorPartes(r.uri, estado.archivo, r.bytesPorParte || 8388608).catch(function (error) {
         // Una subida a medias no sirve: la siguiente vez se empieza de nuevo.
         cancelarCargaPendiente();
@@ -1024,6 +1029,16 @@
     var reintentos = 0;
 
     function fallo(detalle) {
+      // Sin detalle el navegador bloqueó la petición y no hubo respuesta. Si la
+      // sesión se creó sin permiso de origen, la causa es esa y no la conexión.
+      if (!detalle && estado.corsAutorizado === false) {
+        return {
+          codigo: 'SUBIDA_SIN_PERMISO',
+          mensaje: 'Google Drive no autorizó a esta página a subir el archivo, así que la subida ni siquiera ' +
+            'se intentó. No es su conexión a internet: informe al administrador que la sesión de subida se ' +
+            'creó sin permiso de origen (CORS). No se guardó nada.'
+        };
+      }
       return {
         codigo: 'SUBIDA_FALLIDA',
         mensaje: 'La subida del archivo a Google Drive se interrumpió' + (detalle ? ' (' + detalle + ')' : '') +
@@ -1188,6 +1203,7 @@
     cancelarCargaPendiente();
     estado.archivo = null;
     estado.grande = false;
+    estado.corsAutorizado = null;
     estado.base64 = null;
     estado.token = null;
     estado.reporte = null;

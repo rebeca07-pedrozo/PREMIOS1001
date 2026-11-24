@@ -297,8 +297,12 @@ function verificarConfiguracion() {
   });
   revisar('Subida directa a Drive (archivos grandes)', function () {
     // Abre una sesión de subida y no la usa: caduca sola sin crear archivos.
-    const uri = crearSesionSubida_('prueba-' + Utilities.getUuid() + '.xlsx', 1024);
-    return 'sesión creada correctamente (' + uri.slice(0, 48) + '…)';
+    // El origen de prueba tiene la forma del que usa la página al ejecutarse.
+    const sesion = crearSesionSubida_('prueba-' + Utilities.getUuid() + '.xlsx', 1024,
+      'https://n-prueba-0lu-script.googleusercontent.com');
+    return 'sesión creada correctamente (' + sesion.uri.slice(0, 48) + '…) · permiso de origen (CORS) ' +
+      (sesion.corsAutorizado ? 'concedido: el navegador podrá subir el archivo'
+        : 'NO concedido: el navegador bloqueará la subida');
   });
   revisar('Usuario que ejecuta', function () { return usuarioActual_() || '(no disponible)'; });
   const texto = lineas.join('\n');
@@ -501,7 +505,7 @@ function iniciarCargaGrande_(solicitud) {
 
   limpiarTemporales_();
   const cargaId = Utilities.getUuid();
-  const uri = crearSesionSubida_(nombreTemporal_(cargaId), tamano);
+  const sesion = crearSesionSubida_(nombreTemporal_(cargaId), tamano, solicitud.origen);
   guardarCargaEnProceso_(cargaId, {
     fase: 'SUBIENDO',
     nombre: identificacion.nombre,
@@ -509,7 +513,12 @@ function iniciarCargaGrande_(solicitud) {
     tamano: tamano,
     confirmarDuplicado: false
   });
-  return { cargaId: cargaId, uri: uri, bytesPorParte: CONFIG.BYTES_SUBIDA_POR_PARTE };
+  return {
+    cargaId: cargaId,
+    uri: sesion.uri,
+    corsAutorizado: sesion.corsAutorizado,
+    bytesPorParte: CONFIG.BYTES_SUBIDA_POR_PARTE
+  };
 }
 
 /** Nombre con el que el archivo espera en la carpeta temporal. */

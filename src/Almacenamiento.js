@@ -236,19 +236,42 @@ function carpetaTemporal_() {
  * Abre una sesión de subida reanudable y devuelve su dirección. Esa dirección
  * autoriza una sola cosa —subir ese archivo a la carpeta temporal— y no lleva
  * credenciales, así que puede entregarse al navegador sin dar acceso al Drive.
+ *
+ * «origen» es el origen del navegador que subirá el archivo. Se comprueba aquí
+ * antes de reenviarlo a Google: solo se aceptan los del entorno de Apps Script.
  */
-function crearSesionSubida_(nombre, tamano) {
+function origenPermitido_(origen) {
+  const texto = typeof origen === 'string' ? origen.trim() : '';
+  if (!texto || texto.length > 200) return '';
+  return /^https:\/\/([a-z0-9-]+\.)*(googleusercontent\.com|script\.google\.com)$/i.test(texto) ? texto : '';
+}
+
+/** Lee Access-Control-Allow-Origin sin depender de como venga escrita. */
+function permisoCorsDe_(cabeceras) {
+  for (const clave in cabeceras) {
+    if (clave.toLowerCase() === 'access-control-allow-origin') return String(cabeceras[clave] || '');
+  }
+  return '';
+}
+
+function crearSesionSubida_(nombre, tamano, origen) {
   const carpeta = carpetaTemporal_();
+  const permitido = origenPermitido_(origen);
+  const cabecerasPeticion = {
+    Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+    'X-Upload-Content-Type': CONFIG.MIME_XLSX,
+    'X-Upload-Content-Length': String(tamano)
+  };
+  // Google concede CORS a la direccion de subida solo si la peticion que la
+  // crea declara el origen del navegador que va a usarla. Sin esta cabecera el
+  // PUT desde la pagina se bloquea antes de salir.
+  if (permitido) cabecerasPeticion.Origin = permitido;
   const respuesta = UrlFetchApp.fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
       method: 'post',
       muteHttpExceptions: true,
       contentType: 'application/json; charset=UTF-8',
-      headers: {
-        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
-        'X-Upload-Content-Type': CONFIG.MIME_XLSX,
-        'X-Upload-Content-Length': String(tamano)
-      },
+      headers: cabecerasPeticion,
       payload: JSON.stringify({ name: nombre, mimeType: CONFIG.MIME_XLSX, parents: [carpeta.getId()] })
     });
   if (respuesta.getResponseCode() !== 200) {
@@ -263,7 +286,11 @@ function crearSesionSubida_(nombre, tamano) {
       'Google Drive no entregó la dirección de subida. Intente de nuevo.',
       { detalle: recortar_(JSON.stringify(cabeceras), 400) });
   }
-  return String(uri);
+  return {
+    uri: String(uri),
+    origen: permitido,
+    corsAutorizado: !!(permitido && permisoCorsDe_(cabeceras))
+  };
 }
 
 /** Archivo recién subido, localizado por el nombre único de la carga. */
