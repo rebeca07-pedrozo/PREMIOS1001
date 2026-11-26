@@ -10,7 +10,7 @@
 /*     ID_BASE        ID del Excel BaseCorreos                           obligatoria     */
 /*     ID_LOGO        ID de la imagen del logo en Drive                  obligatoria     */
 /*     URL_INTERFAZ   URL de la interfaz de cargue                       obligatoria     */
-/*     DIA_LIMITE     Dia maximo de cargue, por defecto 2                opcional        */
+/*     DIA_LIMITE     Numero de dia habil de cargue, por defecto 2       opcional        */
 /*     CORREO_PRUEBA  La crea y borra sola PruebaCorreoPremios           no tocar        */
 /*                                                                                       */
 /*  FUNCIONES:                                                                           */
@@ -61,7 +61,8 @@ function EnviarCorreoMensualPremios() {
 
   var fechaCorte = dia + ' de ' + meses[mes] + ' de ' + anio;
 
-  var limite = new Date(anio, mes + 1, Number(diaLimite));
+  // El plazo es el día hábil número DIA_LIMITE del mes siguiente al corte.
+  var limite = diaHabilDelMes(anio, mes + 1, diaLimite);
   var fechaLimite = limite.getDate() + ' de ' + meses[limite.getMonth()] + ' de ' + limite.getFullYear();
 
   /****************************************************************/
@@ -188,4 +189,114 @@ function paso(numero, texto) {
     '</td>' +
     '<td style="padding:2px 0 14px;line-height:1.6;">' + texto + '</td>' +
   '</tr>';
+}
+
+/****************************************************************/
+/*          AUXILIAR: dia habil numero n de un mes              */
+/****************************************************************/
+/**
+ * Devuelve el dia habil numero n del mes indicado. Habil es de lunes a viernes
+ * y que no sea festivo en Colombia. mesIndice admite 12: se entiende como enero
+ * del anio siguiente, igual que el constructor Date.
+ */
+function diaHabilDelMes(anio, mesIndice, n) {
+  var cuantos = Math.floor(Number(n));
+  if (!(cuantos >= 1)) cuantos = 2;             // DIA_LIMITE ausente o invalido
+  var fecha = new Date(anio, mesIndice, 1);     // normaliza el mes 12 a enero
+  var mes = fecha.getMonth();
+  var feriados = festivosColombia(fecha.getFullYear());
+  var vistos = 0;
+
+  while (fecha.getMonth() === mes) {
+    if (esHabil(fecha, feriados)) {
+      vistos++;
+      if (vistos === cuantos) return fecha;
+    }
+    fecha.setDate(fecha.getDate() + 1);
+  }
+
+  // Ningun mes baja de 18 dias habiles, pero si DIA_LIMITE se configura muy
+  // alto se devuelve el ultimo habil antes que una fecha de otro mes.
+  do {
+    fecha.setDate(fecha.getDate() - 1);
+  } while (!esHabil(fecha, feriados));
+  return fecha;
+}
+
+function esHabil(fecha, feriados) {
+  var diaSemana = fecha.getDay();
+  return diaSemana !== 0 && diaSemana !== 6 && !feriados[claveFecha(fecha)];
+}
+
+function claveFecha(fecha) {
+  return fecha.getFullYear() + '-' + (fecha.getMonth() + 1) + '-' + fecha.getDate();
+}
+
+/****************************************************************/
+/*          AUXILIAR: festivos de Colombia del anio             */
+/****************************************************************/
+/**
+ * Festivos colombianos: los de fecha fija, los que la Ley Emiliani traslada al
+ * lunes siguiente y los que dependen de la Pascua.
+ */
+function festivosColombia(anio) {
+  var pascua = domingoDePascua(anio);
+  var fijos = [[1, 1], [5, 1], [7, 20], [8, 7], [12, 8], [12, 25]];
+  var trasladables = [[1, 6], [3, 19], [6, 29], [8, 15], [10, 12], [11, 1], [11, 11]];
+  var mapa = {};
+  var i;
+
+  // Virgen de Chiquinquira: festivo nacional desde la Ley 2578 de 2026, que lo
+  // somete al traslado de la Ley Emiliani. Si la Corte Constitucional llegara a
+  // anularla, basta con quitar esta linea.
+  if (anio >= 2026) trasladables.push([7, 9]);
+
+  for (i = 0; i < fijos.length; i++) {
+    mapa[claveFecha(new Date(anio, fijos[i][0] - 1, fijos[i][1]))] = true;
+  }
+  for (i = 0; i < trasladables.length; i++) {
+    mapa[claveFecha(lunesSiguiente(new Date(anio, trasladables[i][0] - 1, trasladables[i][1])))] = true;
+  }
+
+  // Jueves y Viernes Santo conservan su fecha.
+  mapa[claveFecha(sumarDias(pascua, -3))] = true;
+  mapa[claveFecha(sumarDias(pascua, -2))] = true;
+
+  // Ascension, Corpus Christi y Sagrado Corazon ya caen en lunes al sumar
+  // 43, 64 y 71 dias a la Pascua.
+  [43, 64, 71].forEach(function (dias) {
+    mapa[claveFecha(sumarDias(pascua, dias))] = true;
+  });
+
+  return mapa;
+}
+
+function sumarDias(fecha, dias) {
+  var resultado = new Date(fecha.getTime());
+  resultado.setDate(resultado.getDate() + dias);
+  return resultado;
+}
+
+/** Ley Emiliani: el festivo que no cae lunes se traslada al lunes siguiente. */
+function lunesSiguiente(fecha) {
+  return sumarDias(fecha, (8 - (fecha.getDay() || 7)) % 7);
+}
+
+/** Domingo de Pascua en el calendario gregoriano (algoritmo de Meeus). */
+function domingoDePascua(anio) {
+  var a = anio % 19;
+  var b = Math.floor(anio / 100);
+  var c = anio % 100;
+  var d = Math.floor(b / 4);
+  var e = b % 4;
+  var f = Math.floor((b + 8) / 25);
+  var g = Math.floor((b - f + 1) / 3);
+  var h = (19 * a + b - d - g + 15) % 30;
+  var i = Math.floor(c / 4);
+  var k = c % 4;
+  var l = (32 + 2 * e + 2 * i - h - k) % 7;
+  var m = Math.floor((a + 11 * h + 22 * l) / 451);
+  var mes = Math.floor((h + l - 7 * m + 114) / 31);
+  var dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(anio, mes - 1, dia);
 }
